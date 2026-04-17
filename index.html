@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FuelSync</title>
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  
+  <!-- App Stylesheet -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- 1. NAVBAR -->
+  <header class="navbar">
+    <div class="logo">Fuel<span>Sync</span></div>
+    <nav class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="about.html">About</a>
+      <div id="authSection">
+        <button id="loginBtn" class="btn-login" style="border:none; cursor:pointer; font-family:inherit;">Login</button>
+        <div id="profileBox" style="display:none;">
+          <img id="userPhoto" />
+          <span id="userName"></span>
+          <div id="dropdownMenu" style="display:none;">
+            <button id="logoutBtn" class="btn-login" style="background:#ef4444; border:none; cursor:pointer; font-family:inherit; width: 100%;">Logout</button>
+          </div>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <!-- 2. AD BANNER SECTION -->
+  <section class="ad-banner">
+    <div class="ad-content">
+      Ad Space (Coming Soon)
+    </div>
+  </section>
+
+  <!-- 3. MAIN MAP SECTION -->
+  <main class="map-section">
+    <div class="map-wrapper">
+      <div id="map" class="map-container"></div>
+      
+      <!-- Loader Map -->
+      <div class="map-loader" id="map-loader">
+        <div class="spinner"></div>
+      </div>
+      
+      <!-- Locate Me Button -->
+      <button id="locate-me-btn" class="locate-btn" aria-label="Locate Me" title="Locate Me">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="22" y1="12" x2="18" y2="12"></line>
+          <line x1="6" y1="12" x2="2" y2="12"></line>
+          <line x1="12" y1="6" x2="12" y2="2"></line>
+          <line x1="12" y1="22" x2="12" y2="18"></line>
+        </svg>
+      </button>
+
+      <!-- Toast Notification -->
+      <div id="locate-toast" class="toast-notification">
+        <span id="toast-msg"></span>
+      </div>
+      
+      <!-- 4. MAP CONTROLS -->
+      <div class="map-controls">
+        <button id="clearBtn" class="filter-btn active">Clear</button>
+        <button id="evBtn" class="filter-btn">EV</button>
+        <button id="petrolBtn" class="filter-btn">Petrol</button>
+        <button id="cngBtn" class="filter-btn">CNG</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- 5. ACTION BAR -->
+  <section class="action-bar">
+    <button id="tripBtn" class="btn-plan-trip">Plan Your Trip</button>
+    <button id="smartEndBtn" class="btn-plan-trip" style="display:none; background: #ef4444; margin-left: 10px;">End Smart Trip</button>
+  </section>
+
+  <!-- 6. FEATURE CARDS SECTION -->
+  <section class="features-section">
+    <div class="feature-cards">
+      <div class="card">
+        <div class="card-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        </div>
+        <h3>Pre Slot Booking</h3>
+        <p>Reserve your charging or fueling slot in advance.</p>
+      </div>
+      <div class="card" id="btn-nearby">
+        <div class="card-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+        </div>
+        <h3>Nearby Stations</h3>
+        <p>Locate the closest stations to your current route.</p>
+      </div>
+      <div class="card" id="btn-smart-suggest">
+        <div class="card-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M3 12h2"></path><path d="M19 12h2"></path><path d="M6 6l1.5 1.5"></path><path d="M16.5 16.5L18 18"></path><path d="M6 18l1.5-1.5"></path><path d="M16.5 7.5L18 6"></path><circle cx="12" cy="12" r="4"></circle></svg>
+        </div>
+        <h3>Smart Suggestions</h3>
+        <p>Get AI-based recommendations for your vehicle.</p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- 7. THANK YOU SECTION -->
+  <section class="thank-you-section">
+    <div class="thank-you-content">
+      <h2>धन्यवाद 🙏</h2>
+      <p>Thank you for choosing FuelSync</p>
+    </div>
+  </section>
+
+  <!-- 8. FOOTER SECTION -->
+  <footer class="app-footer">
+    <div class="footer-content">
+      <div class="footer-left">
+        <h4>Fuel<span>Sync</span></h4>
+        <p>Smart Fuel & EV Station Finder</p>
+      </div>
+      <div class="footer-center">
+        <a href="index.html">Home</a>
+        <a href="about.html">About</a>
+        <a href="#">Contact</a>
+      </div>
+      <div class="footer-right">
+        <p>&copy; 2026 FuelSync. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- 9. PLAN YOUR TRIP MODAL -->
+  <div id="plan-trip-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Plan Your Trip</h2>
+        <button id="close-modal-btn" class="close-btn" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Service Type</label>
+          <div class="service-options">
+            <label><input type="radio" name="trip-service" value="EV" checked> EV</label>
+            <label><input type="radio" name="trip-service" value="petrol"> Petrol</label>
+            <label><input type="radio" name="trip-service" value="CNG"> CNG</label>
+          </div>
+        </div>
+        
+        <div class="form-group start-group">
+          <label>Start Location</label>
+          <div class="start-options">
+             <label><input type="radio" name="start-type" value="current" checked> Current Location</label>
+             <label><input type="radio" name="start-type" value="custom"> Custom Location</label>
+          </div>
+          <input type="text" id="trip-start-input" class="trip-input hidden" placeholder="Enter starting city/address...">
+        </div>
+
+        <div class="form-group">
+          <label>Destination</label>
+          <input type="text" id="trip-dest-input" class="trip-input" placeholder="Enter destination city/address...">
+        </div>
+        
+        <button id="submit-trip-btn" class="btn-plan-trip submit-btn">Find Route</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10. SMART SUGGESTION MODAL -->
+  <div id="smart-suggestion-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Smart Suggestion</h2>
+        <button id="close-smart-modal-btn" class="close-btn" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Service Type</label>
+          <div class="service-options">
+            <label><input type="radio" name="smart-service" value="EV" checked> EV</label>
+            <label><input type="radio" name="smart-service" value="petrol"> Petrol</label>
+            <label><input type="radio" name="smart-service" value="CNG"> CNG</label>
+          </div>
+        </div>
+        
+        <div class="form-group start-group">
+          <label>Start Location</label>
+          <div class="start-options">
+             <label><input type="radio" name="smart-start-type" value="current" checked> Current Location</label>
+             <label><input type="radio" name="smart-start-type" value="custom"> Custom Location</label>
+          </div>
+          <input type="text" id="smart-start-input" class="trip-input hidden" placeholder="Enter starting city/address...">
+        </div>
+
+        <div class="form-group">
+          <label>Destination</label>
+          <input type="text" id="smart-dest-input" class="trip-input" placeholder="Enter destination city/address...">
+        </div>
+        
+        <div class="form-group">
+          <label>Battery / Fuel Level (%)</label>
+          <input type="number" id="smart-battery-input" class="trip-input" placeholder="e.g. 45" min="0" max="100">
+        </div>
+        
+        <button id="submit-smart-btn" class="btn-plan-trip submit-btn">Get Smart Suggestion</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEARBY ERROR MODAL -->
+  <div id="nearby-error-modal" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+      <div class="modal-header">
+        <h2>Action Required</h2>
+        <button id="close-nearby-error-btn" class="close-btn" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom: 20px;">Please select station type (EV / Petrol / CNG)</p>
+        <button id="ok-nearby-error-btn" class="btn-plan-trip submit-btn">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- App Script -->
+  <script type="module" src="script.js"></script>
+</body>
+</html>
