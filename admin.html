@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>FuelSync Admin - Add Station</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background: #f3f4f6; color: #111827; }
+    .container { max-width: 500px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    h2 { margin-top: 0; color: #ff7a00; }
+    .form-group { margin-bottom: 20px; }
+    label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 14px; }
+    input[type="text"] { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 4px; box-sizing: border-box; font-size: 14px; }
+    input[type="text"]:focus { outline: none; border-color: #ff7a00; }
+    .checkbox-group { display: flex; gap: 15px; }
+    .checkbox-group label { font-weight: normal; display: inline-flex; align-items: center; cursor: pointer; }
+    .checkbox-group input { margin-right: 6px; transform: scale(1.2); }
+    button { padding: 12px 20px; background: #ff7a00; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; font-weight: 700; transition: background 0.2s; }
+    button:hover { background: #e56d00; }
+    button:disabled { opacity: 0.6; cursor: auto; }
+    .message { margin-top: 20px; padding: 12px; border-radius: 4px; display: none; font-weight: 500; text-align: center; }
+    .success { background: #d1fae5; color: #065f46; border: 1px solid #10b981; display: block; }
+    .error { background: #fee2e2; color: #991b1b; border: 1px solid #ef4444; display: block; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h2>Add Station</h2>
+    
+    <form id="adminForm">
+      <div class="form-group">
+        <label>Station Name</label>
+        <input type="text" id="name" placeholder="e.g. Shell Petrol Pump" required>
+      </div>
+      <div class="form-group">
+        <label>Latitude (paste coords directly here to auto-split)</label>
+        <input type="text" id="lat" placeholder="e.g. 19.9978767" required>
+      </div>
+      <div class="form-group">
+        <label>Longitude</label>
+        <input type="text" id="lng" placeholder="e.g. 73.7815847" required>
+      </div>
+      <div class="form-group">
+        <label>Maps Link</label>
+        <input type="text" id="mapsLink" placeholder="e.g. https://maps.google.com/..." required>
+      </div>
+      <div class="form-group">
+        <label>Services</label>
+        <div class="checkbox-group">
+          <label><input type="checkbox" name="services" value="EV"> EV</label>
+          <label><input type="checkbox" name="services" value="Petrol"> Petrol</label>
+          <label><input type="checkbox" name="services" value="CNG"> CNG</label>
+        </div>
+      </div>
+      <button type="submit" id="submitBtn">Add Station</button>
+    </form>
+    
+    <div id="msg" class="message"></div>
+  </div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyBYoR_OTowzepYYgzFr3g-DHieOc6lCHVA",
+    authDomain: "fuel-sync-77081.firebaseapp.com",
+    projectId: "fuel-sync-77081"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const form = document.getElementById('adminForm');
+const latInput = document.getElementById('lat');
+const lngInput = document.getElementById('lng');
+const msgDiv = document.getElementById('msg');
+const submitBtn = document.getElementById('submitBtn');
+
+function showMsg(text, type) {
+    msgDiv.textContent = text;
+    msgDiv.className = 'message ' + type;
+}
+
+// STEP 1: INPUT BEHAVIOR
+// Split ONLY on paste event, do NOT use input event
+latInput.addEventListener('paste', (e) => {
+    const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+    
+    if (pastedText.includes(',')) {
+        const parts = pastedText.split(',');
+        if (parts.length >= 2) {
+            const pLat = parts[0].trim();
+            const pLng = parts[1].trim();
+            
+            if (!isNaN(parseFloat(pLat)) && !isNaN(parseFloat(pLng))) {
+                e.preventDefault();
+                latInput.value = pLat;
+                lngInput.value = pLng;
+            }
+        }
+    }
+});
+
+form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    showMsg('', '');
+    
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Processing...';
+
+    try {
+        // STEP 4: DATA NORMALIZATION
+        const rawName = document.getElementById('name').value.trim();
+        const rawLat = latInput.value.trim();
+        const rawLng = lngInput.value.trim();
+        const rawLink = document.getElementById('mapsLink').value.trim();
+        const normalizedLink = rawLink.toLowerCase();
+
+        const latNum = Number(rawLat);
+        const lngNum = Number(rawLng);
+
+        // STEP 2: SERVICES INPUT
+        const selectedServices = Array.from(document.querySelectorAll('input[name="services"]:checked')).map(cb => cb.value);
+
+        // STEP 5: VALIDATION
+        if (!rawLat || !rawLng) throw new Error("Latitude and Longitude cannot be empty.");
+        if (isNaN(latNum) || isNaN(lngNum)) throw new Error("Latitude and Longitude must be valid numbers.");
+        if (latNum < -90 || latNum > 90) throw new Error("Latitude must be between -90 and 90.");
+        if (lngNum < -180 || lngNum > 180) throw new Error("Longitude must be between -180 and 180.");
+        if (selectedServices.length === 0) throw new Error("Please select at least one service.");
+
+        // STEP 6 & 7: DUPLICATE PREVENTION & FLOW
+        const querySnapshot = await getDocs(collection(db, "stations"));
+        let isDuplicate = false;
+        
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            
+            // SECONDARY CHECK (MAP LINK)
+            if (data.mapsLink && data.mapsLink.trim().toLowerCase() === normalizedLink) {
+                isDuplicate = true;
+            }
+            
+            // PRIMARY CHECK (LOCATION)
+            if (typeof data.lat === 'number' && typeof data.lng === 'number') {
+                const diffLat = Math.abs(data.lat - latNum);
+                const diffLng = Math.abs(data.lng - lngNum);
+                if (diffLat < 0.0005 && diffLng < 0.0005) {
+                    isDuplicate = true;
+                }
+            }
+        });
+
+        if (isDuplicate) {
+            throw new Error("Station already exists");
+        }
+
+        // STEP 8: DATA STRUCTURE
+        const newDoc = {
+            name: rawName,
+            lat: latNum,
+            lng: lngNum,
+            mapsLink: rawLink,
+            services: selectedServices,
+            city: "Nashik" // STEP 3: DEFAULT CITY
+        };
+
+        // STEP 9: SAFE INSERT
+        await addDoc(collection(db, "stations"), newDoc);
+
+        showMsg("Station added successfully!", "success");
+        form.reset();
+
+    } catch (err) {
+        showMsg(err.message, "error");
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Add Station';
+    }
+});
+
+</script>
+</body>
+</html>
