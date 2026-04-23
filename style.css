@@ -1071,6 +1071,38 @@ input[type="radio"] {
   background: var(--cng-color);
 }
 
+.smart-confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 0 0.7rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: var(--radius-pill);
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.smart-confidence-high {
+  background: #16a34a;
+}
+
+.smart-confidence-medium {
+  background: #f59e0b;
+}
+
+.smart-confidence-low {
+  background: #ef4444;
+}
+
+.smart-explanation {
+  margin: 0 0 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 .popup-nav-btn {
   display: inline-flex;
   width: 100%;

@@ -301,6 +301,147 @@ function getDistance(lat1, lng1, lat2, lng2) {
     return R * c;
 }
 
+function clampSmartScore(value) {
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function clampSmartRatio(value) {
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(0, Math.min(1, value));
+}
+
+function getRouteProximityEvaluation(distanceToRoute) {
+    if (distanceToRoute <= 0.2) {
+        return { level: 'High', score: 100 };
+    }
+    if (distanceToRoute <= 1) {
+        return { level: 'Medium', score: 70 };
+    }
+    if (distanceToRoute <= 4) {
+        return { level: 'Low', score: 40 };
+    }
+    return { level: 'Low', score: 0 };
+}
+
+function getStationConfidence(distanceToRoute) {
+    if (distanceToRoute <= 0.2) {
+        return { level: 'High Confidence', badge: 'High', className: 'high' };
+    }
+    if (distanceToRoute <= 1) {
+        return { level: 'Medium Confidence', badge: 'Medium', className: 'medium' };
+    }
+    return { level: 'Low Confidence', badge: 'Low', className: 'low' };
+}
+
+function getBatteryProgressProfile(battery) {
+    if (battery <= 20) {
+        return {
+            min: 0,
+            max: 0.30,
+            target: 0.15,
+            reason: 'prioritized early because your current fuel level is low'
+        };
+    }
+    if (battery >= 21 && battery <= 50) {
+        return {
+            min: 0.30,
+            max: 0.60,
+            target: 0.45,
+            reason: 'matches your current fuel level with a mid-route stop'
+        };
+    }
+    if (battery >= 51 && battery <= 80) {
+        return {
+            min: 0.60,
+            max: 0.85,
+            target: 0.725,
+            reason: 'fits a later stop for your current fuel level'
+        };
+    }
+    return {
+        min: 0.85,
+        max: 1,
+        target: 0.925,
+        reason: 'keeps the stop late because your current fuel level is high'
+    };
+}
+
+function formatSmartDistance(km) {
+    if (!Number.isFinite(km)) return 'unknown distance';
+    if (km < 1) return `${Math.round(km * 1000)} m`;
+    if (km < 10) return `${km.toFixed(1).replace(/\.0$/, '')} km`;
+    return `${Math.round(km)} km`;
+}
+
+function getProgressMatchScore(progressRatio, expectedRatio) {
+    return clampSmartScore(100 - (Math.abs(progressRatio - expectedRatio) * 100));
+}
+
+function getBatterySuitabilityScore(progressRatio, profile) {
+    if (progressRatio >= profile.min && progressRatio <= profile.max) {
+        return 100;
+    }
+
+    const gap = progressRatio < profile.min
+        ? profile.min - progressRatio
+        : progressRatio - profile.max;
+
+    return clampSmartScore(100 - (gap * 100));
+}
+
+function getRouteAlignmentText(distanceToRoute) {
+    const offRouteDistance = formatSmartDistance(distanceToRoute);
+
+    if (distanceToRoute <= 0.2) {
+        return `station is directly aligned with the route (${offRouteDistance} off-route)`;
+    }
+    if (distanceToRoute <= 1) {
+        return `station is within ${offRouteDistance} of the route`;
+    }
+    return `station is within ${offRouteDistance} of the route`;
+}
+
+function buildStationExplanation(station, battery) {
+    const aheadDistance = formatSmartDistance(station.positionAlongRoute);
+    const profile = getBatteryProgressProfile(battery);
+    const routeAlignment = getRouteAlignmentText(station.distanceToRoute);
+
+    return `Recommended stop ${aheadDistance} ahead on your route, ${profile.reason}; ${routeAlignment}.`;
+}
+
+function evaluateStation(station, routeData, battery) {
+    const totalRouteDistance = routeData && Number.isFinite(routeData.totalRouteDistance)
+        ? routeData.totalRouteDistance
+        : 0;
+    const progressRatio = Number.isFinite(station.progressRatio)
+        ? clampSmartRatio(station.progressRatio)
+        : clampSmartRatio(station.positionAlongRoute / totalRouteDistance);
+    const proximity = getRouteProximityEvaluation(station.distanceToRoute);
+    const profile = getBatteryProgressProfile(battery);
+    const confidence = getStationConfidence(station.distanceToRoute);
+    const progressMatchScore = getProgressMatchScore(progressRatio, profile.target);
+    const batterySuitabilityScore = getBatterySuitabilityScore(progressRatio, profile);
+    const score = clampSmartScore(
+        (proximity.score * 0.4) +
+        (progressMatchScore * 0.35) +
+        (batterySuitabilityScore * 0.25)
+    );
+
+    return {
+        score,
+        routeProximityLevel: proximity.level,
+        routeProximityScore: proximity.score,
+        progressMatchScore,
+        batterySuitabilityScore,
+        expectedProgressRatio: profile.target,
+        confidenceLevel: confidence.level,
+        confidenceBadge: confidence.badge,
+        confidenceClassName: confidence.className,
+        explanation: buildStationExplanation(station, battery)
+    };
+}
+
 let tripActive = false;
 let allStations = [];
 let markers = [];
@@ -481,6 +622,42 @@ async function startTrip() {
         });
       }
 
+      function getFallbackCorridorStations(routeCoords, stations, selectedService, userLocation) {
+        const corridorLimits = [1, 2, 4];
+        const measuredStations = [];
+
+        stations.forEach(station => {
+          let hasService = false;
+          if (station.services && station.services.length > 0) {
+              hasService = station.services.some(svc => String(svc).toLowerCase() === selectedService.toLowerCase());
+          } else {
+              hasService = selectedService.toLowerCase() === 'ev';
+          }
+          if (!hasService || !station.lat || !station.lng) return;
+
+          const { routeDist, userDist } = getStationDistances(
+            routeCoords,
+            station,
+            userLocation
+          );
+
+          measuredStations.push({
+            ...station,
+            routeDist,
+            userDist
+          });
+        });
+
+        for (const limit of corridorLimits) {
+          const corridorStations = measuredStations.filter(station => station.routeDist <= limit);
+          if (corridorStations.length > 0) {
+            return sortStations(corridorStations);
+          }
+        }
+
+        return [];
+      }
+
       function getFinalStations(routeCoords, allStations, selectedService, userLocation) {
         let stations = getRouteStations(
           routeCoords,
@@ -490,18 +667,16 @@ async function startTrip() {
         );
 
         if (stations.length === 0) {
-          const nearest = findNearest(userLocation, allStations.filter(s => {
-             if (s.services && s.services.length > 0) {
-                 return s.services.some(svc => String(svc).toLowerCase() === selectedService.toLowerCase());
-             } else {
-                 return selectedService.toLowerCase() === 'ev';
-             }
-          }));
-          return nearest ? [nearest] : [];
+          return getFallbackCorridorStations(
+            routeCoords,
+            allStations,
+            selectedService,
+            userLocation
+          );
         }
 
         stations = sortStations(stations);
-        return stations.slice(0, 4);
+        return stations;
       }
 
       const filteredStations = getFinalStations(
@@ -1038,8 +1213,19 @@ async function handleSmartSuggestionSubmit() {
             bestStation = corridorStations[0];
         }
 
+        const bestStationEvaluation = evaluateStation(
+            bestStation,
+            { totalRouteDistance },
+            battery
+        );
+        bestStation.smartEvaluation = bestStationEvaluation;
+        bestStation.smartScore = bestStationEvaluation.score;
+        bestStation.confidenceLevel = bestStationEvaluation.confidenceLevel;
+        bestStation.confidenceBadge = bestStationEvaluation.confidenceBadge;
+        bestStation.smartExplanation = bestStationEvaluation.explanation;
+
         let finalSelection = [bestStation];
-        let alternatives = corridorStations.filter(s => s !== bestStation).slice(0, 2);
+        let alternatives = corridorStations.filter(s => s !== bestStation);
         finalSelection.push(...alternatives);
 
         // FINAL SELECTION - OUTPUT
@@ -1060,6 +1246,18 @@ async function handleSmartSuggestionSubmit() {
                     }).join('');
                 }
 
+                const evaluation = station.smartEvaluation;
+                const confidenceHTML = evaluation ? `
+                    <span class="smart-confidence-badge smart-confidence-${evaluation.confidenceClassName}" title="${escapeHTML(evaluation.confidenceLevel)}">
+                      ${escapeHTML(evaluation.confidenceBadge)}
+                    </span>
+                ` : '';
+                const explanationHTML = evaluation ? `
+                    <div class="smart-explanation">
+                      ${escapeHTML(evaluation.explanation)}
+                    </div>
+                ` : '';
+
                 marker.bindPopup(`
                   <div class="station-popup">
                     <b style="color: #8b5cf6; font-size: 0.9em; display:block; margin-bottom:5px;">⭐ BEST MATCH</b>
@@ -1067,10 +1265,12 @@ async function handleSmartSuggestionSubmit() {
                     <div style="margin-bottom: 12px;">
                       ${badgesHTML}
                     </div>
+                    ${confidenceHTML}
                     <div style="font-size: 0.85em; color: #6b7280; margin-bottom: 12px;">
                       Distance off-route: ${station.distanceToRoute.toFixed(2)} km<br/>
                       Route Progress: ${(station.progressRatio * 100).toFixed(0)}%
                     </div>
+                    ${explanationHTML}
                     <a href="${station.mapsLink}" target="_blank" class="popup-nav-btn" style="text-decoration:none; text-align:center;">
                       Navigate
                     </a>

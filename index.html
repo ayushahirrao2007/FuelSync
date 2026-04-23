@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,9 +9,12 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Devanagari:wght@700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Noto+Serif+Devanagari:wght@700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
+    rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body class="home-page">
   <header class="navbar">
     <div class="nav-shell page-shell">
@@ -42,7 +46,8 @@
       <div class="hero-copy">
         <span class="section-tag">Clean Navigation Layer</span>
         <h1>Modern station discovery without changing how FuelSync works.</h1>
-        <p>Reserved space for upcoming announcements, ads, promotions, or platform updates while keeping the live map clear and center-focused.</p>
+        <p>Reserved space for upcoming announcements, ads, promotions, or platform updates while keeping the live map
+          clear and center-focused.</p>
       </div>
 
       <div class="hero-banner-card">
@@ -68,7 +73,7 @@
         </div>
       </div>
 
-      <div class="map-stats-grid">
+      <div class="map-stats-grid" style="display: none;">
         <article class="stat-card stat-card-primary">
           <span>Visible Stations</span>
           <strong id="visible-count">0</strong>
@@ -98,7 +103,8 @@
         </div>
 
         <button id="locate-me-btn" class="locate-btn" aria-label="Locate Me" title="Locate Me" type="button">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
             <line x1="22" y1="12" x2="18" y2="12"></line>
             <line x1="6" y1="12" x2="2" y2="12"></line>
@@ -119,7 +125,7 @@
         </div>
       </div>
 
-      <div class="map-summary-strip">
+      <div class="map-summary-strip" style="display: none;">
         <article class="summary-chip">
           <span>Total Results</span>
           <strong id="stat-total">0</strong>
@@ -153,7 +159,8 @@
       <div class="feature-cards">
         <div class="card interactive-card" id="btn-nearby">
           <div class="card-icon">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
               <circle cx="12" cy="10" r="3"></circle>
             </svg>
@@ -165,7 +172,8 @@
 
         <div class="card trip-card">
           <div class="card-icon">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 17l6-6 4 4 8-8"></path>
               <path d="M14 7h7v7"></path>
             </svg>
@@ -176,13 +184,15 @@
 
           <div class="feature-card-actions">
             <button id="tripBtn" class="btn-plan-trip feature-card-btn" type="button">Plan Your Trip</button>
-            <button id="smartEndBtn" class="btn-plan-trip feature-card-btn feature-card-danger" type="button" style="display:none;">End Smart Trip</button>
+            <button id="smartEndBtn" class="btn-plan-trip feature-card-btn feature-card-danger" type="button"
+              style="display:none;">End Smart Trip</button>
           </div>
         </div>
 
         <div class="card interactive-card" id="btn-smart-suggest">
           <div class="card-icon">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 2v2"></path>
               <path d="M12 20v2"></path>
               <path d="M3 12h2"></path>
@@ -212,7 +222,8 @@
       <div class="feature-cards future-grid">
         <article class="card future-card">
           <div class="card-icon">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
               <line x1="16" y1="2" x2="16" y2="6"></line>
               <line x1="8" y1="2" x2="8" y2="6"></line>
@@ -226,7 +237,8 @@
 
         <article class="card future-card">
           <div class="card-icon">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 3h18v6H3z"></path>
               <path d="M7 21h10"></path>
               <path d="M12 9v12"></path>
@@ -239,7 +251,8 @@
 
         <article class="card future-card">
           <div class="card-icon">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
             </svg>
           </div>
@@ -303,7 +316,8 @@
             <label><input type="radio" name="start-type" value="custom" /> Custom Location</label>
           </div>
 
-          <input type="text" id="trip-start-input" class="trip-input hidden" placeholder="Enter starting city/address..." />
+          <input type="text" id="trip-start-input" class="trip-input hidden"
+            placeholder="Enter starting city/address..." />
         </div>
 
         <div class="form-group">
@@ -342,7 +356,8 @@
             <label><input type="radio" name="smart-start-type" value="custom" /> Custom Location</label>
           </div>
 
-          <input type="text" id="smart-start-input" class="trip-input hidden" placeholder="Enter starting city/address..." />
+          <input type="text" id="smart-start-input" class="trip-input hidden"
+            placeholder="Enter starting city/address..." />
         </div>
 
         <div class="form-group">
@@ -377,4 +392,5 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="script.js"></script>
 </body>
+
 </html>
