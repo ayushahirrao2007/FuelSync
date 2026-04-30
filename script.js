@@ -1,11 +1,11 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
-  getAuth,
-  signInWithPopup,
-  GoogleAuthProvider,
-  signOut,
-  onAuthStateChanged
+    getAuth,
+    signInWithPopup,
+    GoogleAuthProvider,
+    signOut,
+    onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseConfig = {
@@ -19,12 +19,12 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 
-let map            = null;
-let markerGroup    = null;
-let userMarker     = null;
-let activeFilter   = 'all';
-let toastTimer     = null;
-let ALL_STATIONS   = [];
+let map = null;
+let markerGroup = null;
+let userMarker = null;
+let activeFilter = 'all';
+let toastTimer = null;
+let ALL_STATIONS = [];
 let smartTripActive = false;
 let loginInProgress = false;
 let selectedService = null;
@@ -53,8 +53,8 @@ function getStationsForZoom() {
     if (!ALL_STATIONS || ALL_STATIONS.length === 0) return [];
     if (!map) return ALL_STATIONS;
 
-    const center  = map.getCenter();
-    const limit   = getZoomLimit(map.getZoom());
+    const center = map.getCenter();
+    const limit = getZoomLimit(map.getZoom());
 
     // Fast-path: fewer stations than the limit → return all
     if (ALL_STATIONS.length <= limit) return [...ALL_STATIONS];
@@ -74,8 +74,8 @@ function getStationsForZoom() {
  * Respects isMapCleared guard — skips rendering when user explicitly cleared the map.
  */
 function renderZoomBasedMarkers() {
-    if (tripActive)    return; // PART 6: route mode protection
-    if (isMapCleared)  return; // STEP 4: cleared map — do not auto re-render
+    if (tripActive) return; // PART 6: route mode protection
+    if (isMapCleared) return; // STEP 4: cleared map — do not auto re-render
     const stations = getStationsForZoom();
     renderMarkers(stations);
 }
@@ -92,9 +92,9 @@ const CACHE_LIMIT = 5;
 let cityLoadingInProgress = false;
 
 const CITY_CENTERS = {
-  Nashik: { lat: 19.9975, lng: 73.7898 },
-  Mumbai: { lat: 19.0760, lng: 72.8777 },
-  Pune:   { lat: 18.5204, lng: 73.8567 }
+    Nashik: { lat: 19.9975, lng: 73.7898 },
+    Mumbai: { lat: 19.0760, lng: 72.8777 },
+    Pune: { lat: 18.5204, lng: 73.8567 }
 };
 
 function initMap() {
@@ -124,7 +124,7 @@ function initMap() {
 
     // ── PART 4: Zoom event → re-render markers (NO API CALL) ──
     map.on('zoomend', () => {
-        if (tripActive)   return; // PART 6: skip in route mode
+        if (tripActive) return; // PART 6: skip in route mode
         if (isMapCleared) return; // STEP 4: skip when map was explicitly cleared
         clearTimeout(_zoomRenderDebounce);
         _zoomRenderDebounce = setTimeout(() => {
@@ -352,7 +352,7 @@ async function switchCity(cityName) {
         console.log("🚫 Skipping reload — same city selected");
         return;
     }
-    
+
     if (cityLoadingInProgress) return; // prevent overlapping loads
     currentActiveCity = cityName;
     selectedCity = cityName;
@@ -396,7 +396,7 @@ function getStationIcon(services) {
         else if (s.includes('petrol')) color = '#ef4444';
         else if (s.includes('cng')) color = '#3b82f6';
     }
-    
+
     return L.divIcon({
         className: 'custom-station-icon',
         html: `<div style="background-color: ${color}; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
@@ -407,37 +407,42 @@ function getStationIcon(services) {
 }
 
 function createMarker(station) {
-  const icon = getStationIcon(station.services);
-  const marker = L.marker([station.lat, station.lng], { icon });
+    const icon = getStationIcon(station.services);
+    const marker = L.marker([station.lat, station.lng], { icon });
 
-  let badgesHTML = '';
-  if (station.services) {
-      badgesHTML = station.services.map(svc => {
-          let className = 'popup-badge';
-          const type = String(svc).toLowerCase();
-          if (type === 'ev') className += ' EV';
-          if (type === 'petrol') className += ' petrol';
-          if (type === 'cng') className += ' CNG';
-          return `<span class="${className}">${svc}</span>`;
-      }).join('');
-  }
+    // ── XSS fix: escape all Firestore-sourced values before HTML insertion ──
+    const safeName = escapeHTML(station.name);
+    const safeMapsLink = safeLink(station.mapsLink);
 
-  marker.bindPopup(`
+    let badgesHTML = '';
+    if (station.services) {
+        badgesHTML = station.services.map(svc => {
+            let className = 'popup-badge';
+            const type = String(svc).toLowerCase();
+            if (type === 'ev') className += ' EV';
+            else if (type === 'petrol') className += ' petrol';
+            else if (type === 'cng') className += ' CNG';
+            // escapeHTML applied to svc — it is a Firestore value
+            return `<span class="${className}">${escapeHTML(svc)}</span>`;
+        }).join('');
+    }
+
+    marker.bindPopup(`
     <div class="station-popup">
-      <div class="popup-name">${station.name}</div>
+      <div class="popup-name">${safeName}</div>
       <div style="margin-bottom: 15px;">
         ${badgesHTML}
       </div>
-      <a href="${station.mapsLink}" target="_blank" class="popup-nav-btn" style="text-decoration:none; text-align:center;">
+      <a href="${safeMapsLink}" target="_blank" rel="noopener noreferrer" class="popup-nav-btn" style="text-decoration:none; text-align:center;">
         Navigate
       </a>
     </div>
   `);
 
-  return marker;
+    return marker;
 }
 
-window.handleNavigation = function(lat, lng) {
+window.handleNavigation = function (lat, lng) {
     const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
     window.open(url, '_blank', 'noopener,noreferrer');
 };
@@ -445,28 +450,28 @@ window.handleNavigation = function(lat, lng) {
 let currentMarkers = [];
 
 function clearMarkers() {
-  currentMarkers.forEach(marker => map.removeLayer(marker));
-  currentMarkers = [];
-  if (window.markerGroup) window.markerGroup.clearLayers();
+    currentMarkers.forEach(marker => map.removeLayer(marker));
+    currentMarkers = [];
+    if (window.markerGroup) window.markerGroup.clearLayers();
 }
 
 function showFilteredStations(service) {
-  isMapCleared = false; // STEP 5: explicit service filter lifts the cleared flag
+    isMapCleared = false; // STEP 5: explicit service filter lifts the cleared flag
 
-  if (window.routeLayer) {
-    map.removeLayer(window.routeLayer);
-    window.routeLayer = null;
-  }
-  clearMarkers();
+    if (window.routeLayer) {
+        map.removeLayer(window.routeLayer);
+        window.routeLayer = null;
+    }
+    clearMarkers();
 
-  const filtered = allStations.filter(station =>
-    station.services && station.services.some(svc => String(svc).toLowerCase() === service.toLowerCase())
-  );
+    const filtered = allStations.filter(station =>
+        station.services && station.services.some(svc => String(svc).toLowerCase() === service.toLowerCase())
+    );
 
-  filtered.forEach(station => {
-    const marker = createMarker(station).addTo(map);
-    currentMarkers.push(marker);
-  });
+    filtered.forEach(station => {
+        const marker = createMarker(station).addTo(map);
+        currentMarkers.push(marker);
+    });
 }
 
 function filterStations(type) {
@@ -481,7 +486,7 @@ function filterStations(type) {
     updateFilterButtons(type);
 
     const subtitleEl = document.getElementById('map-subtitle');
-    const labelMap   = { all: `All Stations – ${selectedCity}`, EV: `EV Charging – ${selectedCity}`, petrol: `Petrol Pumps – ${selectedCity}`, CNG: `CNG Stations – ${selectedCity}` };
+    const labelMap = { all: `All Stations – ${selectedCity}`, EV: `EV Charging – ${selectedCity}`, petrol: `Petrol Pumps – ${selectedCity}`, CNG: `CNG Stations – ${selectedCity}` };
     if (subtitleEl) subtitleEl.textContent = labelMap[type] || selectedCity;
 }
 
@@ -507,14 +512,14 @@ function updateCounts(visibleStations) {
         }
     });
 
-    setTextContent('ev-count',     counts.EV);
+    setTextContent('ev-count', counts.EV);
     setTextContent('petrol-count', counts.petrol);
-    setTextContent('cng-count',    counts.CNG);
+    setTextContent('cng-count', counts.CNG);
 
-    setTextContent('stat-total',  visibleStations.length);
-    setTextContent('stat-ev',     counts.EV);
+    setTextContent('stat-total', visibleStations.length);
+    setTextContent('stat-ev', counts.EV);
     setTextContent('stat-petrol', counts.petrol);
-    setTextContent('stat-cng',    counts.CNG);
+    setTextContent('stat-cng', counts.CNG);
 }
 
 function locateUser() {
@@ -534,7 +539,7 @@ function locateUser() {
             const userIcon = L.divIcon({
                 className: '',
                 html: `<div class="user-marker" title="Your location" aria-label="Your current location"></div>`,
-                iconSize:   [20, 20],
+                iconSize: [20, 20],
                 iconAnchor: [10, 10],
                 popupAnchor: [0, -14],
             });
@@ -560,15 +565,15 @@ function locateUser() {
 }
 
 function showToast(message, type = 'info', duration = 2800) {
-    const toast   = document.getElementById('locate-toast');
-    const msgEl   = document.getElementById('toast-msg');
+    const toast = document.getElementById('locate-toast');
+    const msgEl = document.getElementById('toast-msg');
     if (!toast || !msgEl) return;
 
     msgEl.textContent = message;
 
     toast.style.background =
-        type === 'error'   ? '#dc2626' :
-        type === 'success' ? '#16a34a' : '#1f2937';
+        type === 'error' ? '#dc2626' :
+            type === 'success' ? '#16a34a' : '#1f2937';
 
     toast.classList.add('show');
 
@@ -590,14 +595,34 @@ function escapeHTML(str) {
         .replace(/'/g, '&#039;');
 }
 
+/**
+ * Validates a URL scheme and returns the original URL if safe.
+ * Scheme check uses lowercase to handle mixed-case (HTTPS://, Http://).
+ * The original URL is returned unchanged — path/query are never modified.
+ * Anything that is not http(s) is replaced with '#' to block
+ * javascript:, data:, vbscript:, and similar injection schemes.
+ */
+function safeLink(url) {
+    const raw = String(url || '').trim();
+    const lower = raw.toLowerCase();
+
+    if (lower.startsWith('https://') || lower.startsWith('http://')) {
+        return raw; // return original — do NOT lowercase the full URL
+    }
+
+    // Temporary debug log — remove after Firestore data is verified
+    console.warn('[safeLink] Blocked unsafe or empty link:', url);
+    return '#';
+}
+
 function getDistance(lat1, lng1, lat2, lng2) {
     const R = 6371; // km
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLng/2) * Math.sin(dLng/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
 }
 
@@ -764,266 +789,268 @@ function findNearest(user, stations) {
 }
 
 async function geocodeLocation(query) {
-  const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&addressdetails=1&limit=5`;
+    const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&addressdetails=1&limit=5`;
 
-  const res = await fetch(url);
-  const data = await res.json();
+    const res = await fetch(url);
+    const data = await res.json();
 
-  if (!data || data.length === 0) {
-    throw new Error("Location not found");
-  }
+    if (!data || data.length === 0) {
+        throw new Error("Location not found");
+    }
 
-  // Prefer Maharashtra results
-  const result = data.find(place =>
-    place.display_name.toLowerCase().includes("maharashtra")
-  ) || data[0];
+    // Prefer Maharashtra results
+    const result = data.find(place =>
+        place.display_name.toLowerCase().includes("maharashtra")
+    ) || data[0];
 
-  return {
-    lat: parseFloat(result.lat),
-    lng: parseFloat(result.lon)
-  };
+    return {
+        lat: parseFloat(result.lat),
+        lng: parseFloat(result.lon)
+    };
 }
 
 function toggleTrip() {
-  if (!tripActive) {
-    // Show Modal if available, or just start it.
-    // The previous design expects the user to fill the modal. We'll show the modal instead.
-    const modal = document.getElementById('plan-trip-modal');
-    if (modal) modal.classList.remove('hidden');
-  } else {
-    endTrip();
-  }
+    if (!tripActive) {
+        // Show Modal if available, or just start it.
+        // The previous design expects the user to fill the modal. We'll show the modal instead.
+        const modal = document.getElementById('plan-trip-modal');
+        if (modal) modal.classList.remove('hidden');
+    } else {
+        endTrip();
+    }
 }
 
 async function startTrip() {
-  tripActive = true;
+    tripActive = true;
 
-  document.getElementById("tripBtn").innerText = "End Trip";
+    document.getElementById("tripBtn").innerText = "End Trip";
 
-  try {
-      
-      const serviceType = document.querySelector('input[name="trip-service"]:checked').value;
-      const startType = document.querySelector('input[name="start-type"]:checked').value;
-      const startQuery = document.getElementById('trip-start-input').value;
-      const destQuery = document.getElementById('trip-dest-input').value;
+    try {
 
-      let start = null;
-      if (startType === 'current') {
-          if (!navigator.geolocation) throw new Error('Geolocation not supported');
-          showToast('Getting your location...');
-          start = await new Promise((resolve, reject) => {
-              navigator.geolocation.getCurrentPosition(
-                  pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-                  err => reject(new Error('Please allow location access'))
-              );
-          });
-      } else {
-          if (!startQuery.trim()) throw new Error('Start location empty');
-          start = await geocodeLocation(startQuery);
-      }
+        const serviceType = document.querySelector('input[name="trip-service"]:checked').value;
+        const startType = document.querySelector('input[name="start-type"]:checked').value;
+        const startQuery = document.getElementById('trip-start-input').value;
+        const destQuery = document.getElementById('trip-dest-input').value;
 
-      if (!destQuery.trim()) throw new Error('Destination empty');
-      showToast('Planning your route...');
-      let end = await geocodeLocation(destQuery);
+        let start = null;
+        if (startType === 'current') {
+            if (!navigator.geolocation) throw new Error('Geolocation not supported');
+            showToast('Getting your location...');
+            start = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(
+                    pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                    err => reject(new Error('Please allow location access'))
+                );
+            });
+        } else {
+            if (!startQuery.trim()) throw new Error('Start location empty');
+            start = await geocodeLocation(startQuery);
+        }
 
-      console.log("START:", start);
-      console.log("END:", end);
+        if (!destQuery.trim()) throw new Error('Destination empty');
+        showToast('Planning your route...');
+        let end = await geocodeLocation(destQuery);
 
-      const routeKey = `${start.lat},${start.lng}→${end.lat},${end.lng}`;
-      if (routeKey === lastRouteKey) {
-          console.log("🚫 Skipping route processing — same route");
-          const modal = document.getElementById('plan-trip-modal');
-          if (modal) modal.classList.add('hidden');
-          return;
-      }
-      lastRouteKey = routeKey;
+        console.log("START:", start);
+        console.log("END:", end);
 
-      const routeUrl = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
-      const response = await fetch(routeUrl);
-      if (!response.ok) throw new Error('OSRM fetch failed');
-      const data = await response.json();
-      
-      if (!data.routes || data.routes.length === 0) {
-          throw new Error('No route returned');
-      }
+        const routeKey = `${start.lat},${start.lng}→${end.lat},${end.lng}`;
+        if (routeKey === lastRouteKey) {
+            console.log("🚫 Skipping route processing — same route");
+            const modal = document.getElementById('plan-trip-modal');
+            if (modal) modal.classList.add('hidden');
+            return;
+        }
+        lastRouteKey = routeKey;
 
-      const routeGeoJSON = data.routes[0].geometry;
+        const routeUrl = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
+        const response = await fetch(routeUrl);
+        if (!response.ok) throw new Error('OSRM fetch failed');
+        const data = await response.json();
 
-      if (window.routeLayer) {
-        map.removeLayer(window.routeLayer);
-      }
-      
-      markers.forEach(m => map.removeLayer(m));
-      markers = [];
-      
-      if (markerGroup) markerGroup.clearLayers();
-      if (userMarker) map.removeLayer(userMarker);
-      
-      window.routeLayer = L.geoJSON(routeGeoJSON, {
-          style: { color: '#3b82f6', weight: 5, opacity: 0.8 }
-      }).addTo(map);
+        if (!data.routes || data.routes.length === 0) {
+            throw new Error('No route returned');
+        }
 
-      map.fitBounds(window.routeLayer.getBounds(), { padding: [50, 50] });
+        const routeGeoJSON = data.routes[0].geometry;
 
-      const routeCoords = routeGeoJSON.coordinates;
-      window.currentRouteCoords = routeCoords;
-      window.currentUserLocation = start;
-      window.currentSelectedService = serviceType;
+        if (window.routeLayer) {
+            map.removeLayer(window.routeLayer);
+        }
 
-      // ── Route-based multi-city loading ──
-      const citiesToLoad = detectRouteCities(routeCoords, start, end);
-      if (citiesToLoad.length > 0) {
-          await loadMultiCityData(citiesToLoad);
-      }
-      
-      // ── Route corridor filtering ──
+        markers.forEach(m => map.removeLayer(m));
+        markers = [];
 
-      // Build cumulative distance array for route progress tracking
-      const cumDist = [0];
-      let totalRouteDist = 0;
-      for (let i = 1; i < routeCoords.length; i++) {
-          const p1 = routeCoords[i - 1];
-          const p2 = routeCoords[i];
-          totalRouteDist += getDistance(p1[1], p1[0], p2[1], p2[0]);
-          cumDist.push(totalRouteDist);
-      }
+        if (markerGroup) markerGroup.clearLayers();
+        if (userMarker) map.removeLayer(userMarker);
 
-      // Dynamic sampling step — ~200 samples regardless of route length
-      const sampleStep = Math.max(1, Math.floor(routeCoords.length / 200));
+        window.routeLayer = L.geoJSON(routeGeoJSON, {
+            style: { color: '#3b82f6', weight: 5, opacity: 0.8 }
+        }).addTo(map);
 
-      // Measure each station against the route
-      const measuredStations = [];
-      allStations.forEach(station => {
-          if (!station.lat || !station.lng) return;
+        map.fitBounds(window.routeLayer.getBounds(), { padding: [50, 50] });
 
-          // Service type filter
-          let hasService = false;
-          if (station.services && station.services.length > 0) {
-              hasService = station.services.some(svc => String(svc).toLowerCase() === serviceType.toLowerCase());
-          } else {
-              hasService = serviceType.toLowerCase() === 'ev';
-          }
-          if (!hasService) return;
+        const routeCoords = routeGeoJSON.coordinates;
+        window.currentRouteCoords = routeCoords;
+        window.currentUserLocation = start;
+        window.currentSelectedService = serviceType;
 
-          // Find closest route point
-          let minRouteDist = Infinity;
-          let closestIdx = 0;
-          for (let i = 0; i < routeCoords.length; i += sampleStep) {
-              const point = routeCoords[i];
-              const dist = getDistance(station.lat, station.lng, point[1], point[0]);
-              if (dist < minRouteDist) {
-                  minRouteDist = dist;
-                  closestIdx = i;
-              }
-          }
-          // Refine: check neighbors of closest sampled point for precision
-          const refineStart = Math.max(0, closestIdx - sampleStep);
-          const refineEnd = Math.min(routeCoords.length - 1, closestIdx + sampleStep);
-          for (let i = refineStart; i <= refineEnd; i++) {
-              const point = routeCoords[i];
-              const dist = getDistance(station.lat, station.lng, point[1], point[0]);
-              if (dist < minRouteDist) {
-                  minRouteDist = dist;
-                  closestIdx = i;
-              }
-          }
+        // ── Route-based multi-city loading ──
+        const citiesToLoad = detectRouteCities(routeCoords, start, end);
+        if (citiesToLoad.length > 0) {
+            await loadMultiCityData(citiesToLoad);
+        }
 
-          // Position along route (km from start)
-          const positionAlongRoute = cumDist[closestIdx];
-          const progressRatio = totalRouteDist > 0 ? positionAlongRoute / totalRouteDist : 0;
+        // ── Route corridor filtering ──
 
-          // Strict corridor: discard anything > 4 km from route
-          if (minRouteDist > 4) return;
+        // Build cumulative distance array for route progress tracking
+        const cumDist = [0];
+        let totalRouteDist = 0;
+        for (let i = 1; i < routeCoords.length; i++) {
+            const p1 = routeCoords[i - 1];
+            const p2 = routeCoords[i];
+            totalRouteDist += getDistance(p1[1], p1[0], p2[1], p2[0]);
+            cumDist.push(totalRouteDist);
+        }
 
-          // Discard stations behind start (< 0.5 km along route)
-          if (positionAlongRoute < 0.5) return;
+        // Dynamic sampling step — ~200 samples regardless of route length
+        const sampleStep = Math.max(1, Math.floor(routeCoords.length / 200));
 
-          // Assign corridor tier for priority sorting
-          let corridorTier = 3; // 2-4 km
-          if (minRouteDist <= 1) corridorTier = 1;      // ideal
-          else if (minRouteDist <= 2) corridorTier = 2;  // acceptable
+        // Measure each station against the route
+        const measuredStations = [];
+        allStations.forEach(station => {
+            if (!station.lat || !station.lng) return;
 
-          measuredStations.push({
-              ...station,
-              routeDist: minRouteDist,
-              positionAlongRoute,
-              progressRatio,
-              corridorTier,
-              userDist: getDistance(start.lat, start.lng, station.lat, station.lng)
-          });
-      });
+            // Service type filter
+            let hasService = false;
+            if (station.services && station.services.length > 0) {
+                hasService = station.services.some(svc => String(svc).toLowerCase() === serviceType.toLowerCase());
+            } else {
+                hasService = serviceType.toLowerCase() === 'ev';
+            }
+            if (!hasService) return;
 
-      // ── Strict tier-based selection ──
-      // Show ALL stations from the closest available corridor only
-      let filteredStations = [];
-      const tier1 = measuredStations.filter(s => s.corridorTier === 1);
-      const tier2 = measuredStations.filter(s => s.corridorTier <= 2);
-      const tier3 = measuredStations; // all ≤4km already
+            // Find closest route point
+            let minRouteDist = Infinity;
+            let closestIdx = 0;
+            for (let i = 0; i < routeCoords.length; i += sampleStep) {
+                const point = routeCoords[i];
+                const dist = getDistance(station.lat, station.lng, point[1], point[0]);
+                if (dist < minRouteDist) {
+                    minRouteDist = dist;
+                    closestIdx = i;
+                }
+            }
+            // Refine: check neighbors of closest sampled point for precision
+            const refineStart = Math.max(0, closestIdx - sampleStep);
+            const refineEnd = Math.min(routeCoords.length - 1, closestIdx + sampleStep);
+            for (let i = refineStart; i <= refineEnd; i++) {
+                const point = routeCoords[i];
+                const dist = getDistance(station.lat, station.lng, point[1], point[0]);
+                if (dist < minRouteDist) {
+                    minRouteDist = dist;
+                    closestIdx = i;
+                }
+            }
 
-      if (tier1.length > 0) {
-          filteredStations = tier1;
-      } else if (tier2.length > 0) {
-          filteredStations = tier2;
-      } else {
-          filteredStations = tier3;
-      }
+            // Position along route (km from start)
+            const positionAlongRoute = cumDist[closestIdx];
+            const progressRatio = totalRouteDist > 0 ? positionAlongRoute / totalRouteDist : 0;
 
-      // Sort within selected tier: route distance → forward progress → user distance
-      filteredStations.sort((a, b) => {
-          if (Math.abs(a.routeDist - b.routeDist) > 0.1) return a.routeDist - b.routeDist;
-          if (Math.abs(a.positionAlongRoute - b.positionAlongRoute) > 0.5) return a.positionAlongRoute - b.positionAlongRoute;
-          return a.userDist - b.userDist;
-      });
+            // Strict corridor: discard anything > 4 km from route
+            if (minRouteDist > 4) return;
 
-      // Handle empty result
-      if (filteredStations.length === 0) {
-          showToast('No stations found along your route', 'error', 3500);
-      } else {
-          // Render corridor-filtered stations
-          filteredStations.forEach(station => {
-              const marker = createMarker(station).addTo(map);
-              markers.push(marker);
-          });
-          showToast(`Found ${filteredStations.length} stations along the route.`, 'success');
-      }
+            // Discard stations behind start (< 0.5 km along route)
+            if (positionAlongRoute < 0.5) return;
 
-      const modal = document.getElementById('plan-trip-modal');
-      if (modal) modal.classList.add('hidden');
-  } catch (err) {
-      console.warn(err);
-      if (err.message.includes('No route') || err.message.includes('fetch failed')) {
-          alert('Route unavailable, opening Google Maps');
-          // window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destQuery)}`, '_blank');
-      } else if (err.message === 'Location not found') {
-          alert("Location not found");
-      } else {
-          alert(err.message);
-      }
-      endTrip(); // Revert active state on err
-  }
+            // Assign corridor tier for priority sorting
+            let corridorTier = 3; // 2-4 km
+            if (minRouteDist <= 1) corridorTier = 1;      // ideal
+            else if (minRouteDist <= 2) corridorTier = 2;  // acceptable
+
+            measuredStations.push({
+                ...station,
+                routeDist: minRouteDist,
+                positionAlongRoute,
+                progressRatio,
+                corridorTier,
+                userDist: getDistance(start.lat, start.lng, station.lat, station.lng)
+            });
+        });
+
+        // ── Strict tier-based selection ──
+        // Show ALL stations from the closest available corridor only
+        let filteredStations = [];
+        const tier1 = measuredStations.filter(s => s.corridorTier === 1);
+        const tier2 = measuredStations.filter(s => s.corridorTier <= 2);
+        const tier3 = measuredStations; // all ≤4km already
+
+        if (tier1.length > 0) {
+            filteredStations = tier1;
+        } else if (tier2.length > 0) {
+            filteredStations = tier2;
+        } else {
+            filteredStations = tier3;
+        }
+
+        // Sort within selected tier: route distance → forward progress → user distance
+        filteredStations.sort((a, b) => {
+            if (Math.abs(a.routeDist - b.routeDist) > 0.1) return a.routeDist - b.routeDist;
+            if (Math.abs(a.positionAlongRoute - b.positionAlongRoute) > 0.5) return a.positionAlongRoute - b.positionAlongRoute;
+            return a.userDist - b.userDist;
+        });
+
+        // Handle empty result
+        if (filteredStations.length === 0) {
+            showToast('No stations found along your route', 'error', 3500);
+        } else {
+            // Render corridor-filtered stations
+            filteredStations.forEach(station => {
+                const marker = createMarker(station).addTo(map);
+                markers.push(marker);
+            });
+            showToast(`Found ${filteredStations.length} stations along the route.`, 'success');
+        }
+
+        const modal = document.getElementById('plan-trip-modal');
+        if (modal) modal.classList.add('hidden');
+    } catch (err) {
+        console.warn(err);
+        if (err.message.includes('No route') || err.message.includes('fetch failed')) {
+            alert('Route unavailable, opening Google Maps');
+            // window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destQuery)}`, '_blank');
+        } else if (err.message === 'Location not found') {
+            alert("Location not found");
+        } else {
+            alert(err.message);
+        }
+        endTrip(); // Revert active state on err
+    }
 }
 
 function endTrip() {
-  tripActive = false;
-  lastRouteKey = null;
+    if (!tripActive) return; // Guard: do nothing if no trip is currently active
 
-  document.getElementById("tripBtn").innerText = "Plan Your Trip";
+    tripActive = false;
+    lastRouteKey = null;
 
-  // remove route
-  if (window.routeLayer) {
-    map.removeLayer(window.routeLayer);
-  }
+    document.getElementById("tripBtn").innerText = "Plan Your Trip";
 
-  // remove markers
-  markers.forEach(m => map.removeLayer(m));
-  markers = [];
+    // remove route
+    if (window.routeLayer) {
+        map.removeLayer(window.routeLayer);
+    }
 
-  // Revert to single city mode
-  const center = CITY_CENTERS[selectedCity] || CITY_CENTERS.Nashik;
-  map.setView([center.lat, center.lng], 12);
-  
-  // Reload selected city data only
-  loadCityData(selectedCity);
+    // remove markers
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
+
+    // Revert to single city mode
+    const center = CITY_CENTERS[selectedCity] || CITY_CENTERS.Nashik;
+    map.setView([center.lat, center.lng], 12);
+
+    // Reload selected city data only
+    loadCityData(selectedCity);
 }
 
 function handleNearbyStation() {
@@ -1055,7 +1082,7 @@ function handleNearbyStation() {
             const userIcon = L.divIcon({
                 className: '',
                 html: `<div class="user-marker" title="Your location" aria-label="Your current location"></div>`,
-                iconSize:   [20, 20],
+                iconSize: [20, 20],
                 iconAnchor: [10, 10],
                 popupAnchor: [0, -14],
             });
@@ -1108,7 +1135,7 @@ function handleNearbyStation() {
 
                 let itemsToGroup = [userMarker, ...currentMarkers];
                 if (window.routeLayer) itemsToGroup.push(window.routeLayer);
-                
+
                 const group = new L.featureGroup(itemsToGroup);
                 map.fitBounds(group.getBounds(), { padding: [50, 50] });
                 showToast(`Showing nearest ${selectedService} stations`, 'success', 3000);
@@ -1141,7 +1168,19 @@ function bindEvents() {
         isMapCleared = true;
         clearTimeout(_zoomRenderDebounce); // STEP 3: cancel any pending re-render
 
+        // ── State reset: clear trip flags so zoom/city/new trip all work again ──
+        tripActive = false;
+        lastRouteKey = null;
         selectedService = null;
+
+        // Reset trip button UI (tripBtn / smartEndBtn) if they exist
+        const tripBtn = document.getElementById('tripBtn');
+        const smartEndBtn = document.getElementById('smartEndBtn');
+        if (tripBtn) {
+            tripBtn.style.display = 'inline-block';
+            tripBtn.innerText = 'Plan Your Trip'; // Reset text just like endTrip() does
+        }
+        if (smartEndBtn) smartEndBtn.style.display = 'none';
 
         // Remove route layer if present
         if (window.routeLayer) {
@@ -1229,7 +1268,7 @@ function bindEvents() {
             const center = CITY_CENTERS[selectedCity] || CITY_CENTERS.Nashik;
             if (map) map.flyTo([center.lat, center.lng], 13, { duration: 1.2 });
             showToast('Filters reset.', 'info', 2000);
-            
+
             // if trip is active end it, otherwise just reload selected city
             if (tripActive) {
                 endTrip();
@@ -1272,7 +1311,7 @@ function bindEvents() {
 
         const smartStartTypeRadios = document.querySelectorAll('input[name="smart-start-type"]');
         const smartStartInput = document.getElementById('smart-start-input');
-        
+
         smartStartTypeRadios.forEach(radio => {
             radio.addEventListener('change', (e) => {
                 if (e.target.value === 'custom') {
@@ -1295,39 +1334,39 @@ function bindEvents() {
 
     const loginBtn = document.getElementById("loginBtn");
     const logoutBtn = document.getElementById("logoutBtn");
-    
+
     if (loginBtn) {
         loginBtn.onclick = async () => {
-          if (loginInProgress) return; // prevent multiple clicks
-          
-          loginInProgress = true;
-          loginBtn.disabled = true;
+            if (loginInProgress) return; // prevent multiple clicks
 
-          try {
-            const result = await signInWithPopup(auth, provider);
-            console.log("LOGIN SUCCESS:", result.user);
-          } catch (error) {
-            // IGNORE this specific error
-            if (error.code === "auth/cancelled-popup-request" || error.code === "auth/popup-closed-by-user") {
-              console.warn("Popup cancelled due to multiple clicks or user close");
-            } else {
-              console.error("ERROR:", error);
-              alert(error.message);
+            loginInProgress = true;
+            loginBtn.disabled = true;
+
+            try {
+                const result = await signInWithPopup(auth, provider);
+                console.log("LOGIN SUCCESS:", result.user);
+            } catch (error) {
+                // IGNORE this specific error
+                if (error.code === "auth/cancelled-popup-request" || error.code === "auth/popup-closed-by-user") {
+                    console.warn("Popup cancelled due to multiple clicks or user close");
+                } else {
+                    console.error("ERROR:", error);
+                    alert(error.message);
+                }
+            } finally {
+                loginInProgress = false;
+                loginBtn.disabled = false;
             }
-          } finally {
-            loginInProgress = false;
-            loginBtn.disabled = false;
-          }
         };
     }
 
     if (logoutBtn) {
         logoutBtn.onclick = async () => {
-          try {
-            await signOut(auth);
-          } catch (error) {
-            console.error("Logout Error:", error);
-          }
+            try {
+                await signOut(auth);
+            } catch (error) {
+                console.error("Logout Error:", error);
+            }
         };
     }
 
@@ -1349,34 +1388,34 @@ function bindEvents() {
     }
 
     onAuthStateChanged(auth, (user) => {
-      const loginBtn = document.getElementById("loginBtn");
-      const profileBox = document.getElementById("profileBox");
-      const userName = document.getElementById("userName");
-      const userPhoto = document.getElementById("userPhoto");
+        const loginBtn = document.getElementById("loginBtn");
+        const profileBox = document.getElementById("profileBox");
+        const userName = document.getElementById("userName");
+        const userPhoto = document.getElementById("userPhoto");
 
-      if (!loginBtn || !profileBox || !userName || !userPhoto) return;
+        if (!loginBtn || !profileBox || !userName || !userPhoto) return;
 
-      if (user) {
-        isUserLoggedIn = true;
-        loginBtn.style.display = "none";
-        profileBox.style.display = "flex";
-        userName.innerText = user.displayName;
-        userPhoto.src = user.photoURL;
-      } else {
-        isUserLoggedIn = false;
-        loginBtn.style.display = "inline-block";
-        profileBox.style.display = "none";
-      }
+        if (user) {
+            isUserLoggedIn = true;
+            loginBtn.style.display = "none";
+            profileBox.style.display = "flex";
+            userName.innerText = user.displayName;
+            userPhoto.src = user.photoURL;
+        } else {
+            isUserLoggedIn = false;
+            loginBtn.style.display = "inline-block";
+            profileBox.style.display = "none";
+        }
     });
 
     const profileBox = document.getElementById("profileBox");
     const dropdown = document.getElementById("dropdownMenu");
 
     if (profileBox && dropdown) {
-      profileBox.onclick = () => {
-        dropdown.style.display =
-          dropdown.style.display === "block" ? "none" : "block";
-      };
+        profileBox.onclick = () => {
+            dropdown.style.display =
+                dropdown.style.display === "block" ? "none" : "block";
+        };
     }
 
 
@@ -1395,7 +1434,7 @@ async function handleSmartSuggestionSubmit() {
         const startQuery = document.getElementById('smart-start-input').value;
         const destQuery = document.getElementById('smart-dest-input').value;
         const batteryInput = document.getElementById('smart-battery-input').value;
-        
+
         let battery = parseInt(batteryInput, 10);
         if (isNaN(battery) || battery < 0 || battery > 100) {
             throw new Error("Please enter a valid battery/fuel percentage (0-100).");
@@ -1433,7 +1472,7 @@ async function handleSmartSuggestionSubmit() {
         const response = await fetch(routeUrl);
         if (!response.ok) throw new Error('OSRM fetch failed');
         const data = await response.json();
-        
+
         if (!data.routes || data.routes.length === 0) {
             throw new Error('No route returned');
         }
@@ -1443,13 +1482,13 @@ async function handleSmartSuggestionSubmit() {
         if (window.routeLayer) {
             map.removeLayer(window.routeLayer);
         }
-        
+
         markers.forEach(m => map.removeLayer(m));
         markers = [];
-        
+
         if (markerGroup) markerGroup.clearLayers();
         if (userMarker) map.removeLayer(userMarker);
-        
+
         window.routeLayer = L.geoJSON(routeGeoJSON, {
             style: { color: '#8b5cf6', weight: 5, opacity: 0.8 } // Purple for smart route
         }).addTo(map);
@@ -1463,7 +1502,7 @@ async function handleSmartSuggestionSubmit() {
         if (smartCitiesToLoad.length > 0) {
             await loadMultiCityData(smartCitiesToLoad);
         }
-        
+
         // Cumulative distances for precise progress calculation
         let cumulativeDistances = [0];
         let totalRouteDistanceCalc = 0;
@@ -1508,7 +1547,7 @@ async function handleSmartSuggestionSubmit() {
 
             // REMOVE INVALID STATIONS
             // > 4km or behind start location (<=0.1 km distance traveled to filter out backwards)
-            if (minDistanceToRoute <= 4 && positionAlongRoute > 0.1) { 
+            if (minDistanceToRoute <= 4 && positionAlongRoute > 0.1) {
                 mappedStations.push({
                     ...station,
                     distanceToRoute: minDistanceToRoute,
@@ -1525,7 +1564,7 @@ async function handleSmartSuggestionSubmit() {
         // CORRIDOR FILTER
         let corridorStations = [];
         const corridors = [0.2, 1.0, 2.0, 4.0];
-        
+
         for (const limit of corridors) {
             corridorStations = mappedStations.filter(s => s.distanceToRoute <= limit);
             if (corridorStations.length > 0) {
@@ -1543,7 +1582,7 @@ async function handleSmartSuggestionSubmit() {
 
         // BATTERY / FUEL DECISION ENGINE
         let bestStation = null;
-        
+
         corridorStations.forEach(s => {
             s.progressRatio = s.positionAlongRoute / totalRouteDistance;
         });
@@ -1594,17 +1633,21 @@ async function handleSmartSuggestionSubmit() {
         finalSelection.forEach((station, index) => {
             const isBest = index === 0;
             const marker = createMarker(station);
-            
+
             if (isBest) {
+                // ── XSS fix: escape all Firestore-sourced values before HTML insertion ──
+                const safeName = escapeHTML(station.name);
+                const safeMapsLink = safeLink(station.mapsLink);
+
                 let badgesHTML = '';
                 if (station.services) {
                     badgesHTML = station.services.map(svc => {
                         let className = 'popup-badge';
                         const type = String(svc).toLowerCase();
                         if (type === 'ev') className += ' EV';
-                        if (type === 'petrol') className += ' petrol';
-                        if (type === 'cng') className += ' CNG';
-                        return `<span class="${className}">${svc}</span>`;
+                        else if (type === 'petrol') className += ' petrol';
+                        else if (type === 'cng') className += ' CNG';
+                        return `<span class="${className}">${escapeHTML(svc)}</span>`;
                     }).join('');
                 }
 
@@ -1623,7 +1666,7 @@ async function handleSmartSuggestionSubmit() {
                 marker.bindPopup(`
                   <div class="station-popup">
                     <b style="color: #8b5cf6; font-size: 0.9em; display:block; margin-bottom:5px;">⭐ BEST MATCH</b>
-                    <div class="popup-name">${station.name}</div>
+                    <div class="popup-name">${safeName}</div>
                     <div style="margin-bottom: 12px;">
                       ${badgesHTML}
                     </div>
@@ -1633,15 +1676,16 @@ async function handleSmartSuggestionSubmit() {
                       Route Progress: ${(station.progressRatio * 100).toFixed(0)}%
                     </div>
                     ${explanationHTML}
-                    <a href="${station.mapsLink}" target="_blank" class="popup-nav-btn" style="text-decoration:none; text-align:center;">
+                    <a href="${safeMapsLink}" target="_blank" rel="noopener noreferrer" class="popup-nav-btn" style="text-decoration:none; text-align:center;">
                       Navigate
                     </a>
                   </div>
                 `);
-            }
+            } // end if (isBest)
+
             marker.addTo(map);
             markers.push(marker);
-            
+
             if (isBest) marker.openPopup();
         });
 
@@ -1651,9 +1695,9 @@ async function handleSmartSuggestionSubmit() {
 
         const modal = document.getElementById('smart-suggestion-modal');
         if (modal) modal.classList.add('hidden');
-        
+
         showToast('Smart Suggestion applied!', 'success');
-        
+
     } catch (err) {
         console.warn(err);
         showToast(err.message || "An error occurred", 'error');
@@ -1665,7 +1709,7 @@ function endSmartTrip() {
 
     const tripBtn = document.getElementById('tripBtn');
     if (tripBtn) tripBtn.style.display = 'inline-block';
-    
+
     const smartEndBtn = document.getElementById('smartEndBtn');
     if (smartEndBtn) smartEndBtn.style.display = 'none';
 
@@ -1686,7 +1730,7 @@ function endSmartTrip() {
 // ── Require Login Gate ──
 function requireLogin() {
     if (isUserLoggedIn) return true;
-    
+
     const loginModal = document.getElementById("login-prompt-modal");
     if (loginModal) {
         loginModal.classList.remove("hidden");
