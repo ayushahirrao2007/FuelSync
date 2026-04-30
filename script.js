@@ -30,6 +30,56 @@ let loginInProgress = false;
 let selectedService = null;
 let isUserLoggedIn = false;
 
+// ── Zoom-Based Rendering State ──
+let _zoomRenderDebounce = null;
+let isMapCleared = false; // blocks zoom re-render after user explicitly clears the map
+
+/**
+ * Returns the maximum number of stations to display at a given zoom level.
+ * Zoom ≤ 10 → 30, Zoom 11-13 → 80, Zoom ≥ 14 → 9999 (all).
+ */
+function getZoomLimit(zoom) {
+    if (zoom <= 10) return 30;
+    if (zoom <= 13) return 80;
+    return 9999; // show all at close zoom
+}
+
+/**
+ * Picks the top-N stations from ALL_STATIONS sorted by distance from the
+ * current map centre. N is determined by the current zoom level.
+ * Returns an empty array when ALL_STATIONS is not yet populated.
+ */
+function getStationsForZoom() {
+    if (!ALL_STATIONS || ALL_STATIONS.length === 0) return [];
+    if (!map) return ALL_STATIONS;
+
+    const center  = map.getCenter();
+    const limit   = getZoomLimit(map.getZoom());
+
+    // Fast-path: fewer stations than the limit → return all
+    if (ALL_STATIONS.length <= limit) return [...ALL_STATIONS];
+
+    // Sort a shallow copy by distance from map centre, take top N
+    const sorted = [...ALL_STATIONS].sort((a, b) => {
+        const dA = getDistance(center.lat, center.lng, a.lat, a.lng);
+        const dB = getDistance(center.lat, center.lng, b.lat, b.lng);
+        return dA - dB;
+    });
+    return sorted.slice(0, limit);
+}
+
+/**
+ * Main entry-point for normal (non-route) map rendering.
+ * Respects tripActive guard — skips rendering when a route is active.
+ * Respects isMapCleared guard — skips rendering when user explicitly cleared the map.
+ */
+function renderZoomBasedMarkers() {
+    if (tripActive)    return; // PART 6: route mode protection
+    if (isMapCleared)  return; // STEP 4: cleared map — do not auto re-render
+    const stations = getStationsForZoom();
+    renderMarkers(stations);
+}
+
 // ── Execution Control State ──
 let currentActiveCity = null;
 let lastRouteKey = null;
@@ -70,6 +120,17 @@ function initMap() {
 
     window.addEventListener('resize', () => {
         if (map) map.invalidateSize();
+    });
+
+    // ── PART 4: Zoom event → re-render markers (NO API CALL) ──
+    map.on('zoomend', () => {
+        if (tripActive)   return; // PART 6: skip in route mode
+        if (isMapCleared) return; // STEP 4: skip when map was explicitly cleared
+        clearTimeout(_zoomRenderDebounce);
+        _zoomRenderDebounce = setTimeout(() => {
+            console.log('🔍 Zoom render — NO API CALL | zoom:', map.getZoom(), '| stations in memory:', ALL_STATIONS.length);
+            renderZoomBasedMarkers();
+        }, 120); // slight debounce prevents flicker (PART 7)
     });
 
     loadCityData(selectedCity);
@@ -113,6 +174,7 @@ async function loadCityData(cityName) {
             const loader = document.getElementById('map-loader');
             if (loader) loader.classList.add('hidden');
             clearMarkers();
+            renderZoomBasedMarkers(); // PART 1/2: zoom-limited render after cache hit
             updateMapSubtitle();
             console.log(`[CityLoader] Loaded ${cityName} from cache (${ALL_STATIONS.length} stations)`);
             console.timeEnd("Fetch " + cityName);
@@ -143,6 +205,7 @@ async function loadCityData(cityName) {
         if (loader) loader.classList.add('hidden');
 
         clearMarkers();
+        renderZoomBasedMarkers(); // PART 1/2: zoom-limited render on fresh fetch
         updateMapSubtitle();
 
         // UX: handle empty data
@@ -294,6 +357,8 @@ async function switchCity(cityName) {
     currentActiveCity = cityName;
     selectedCity = cityName;
 
+    isMapCleared = false; // STEP 5: new city action lifts the cleared flag
+
     // Update city selector button highlights
     document.querySelectorAll('.city-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.city === cityName);
@@ -386,6 +451,8 @@ function clearMarkers() {
 }
 
 function showFilteredStations(service) {
+  isMapCleared = false; // STEP 5: explicit service filter lifts the cleared flag
+
   if (window.routeLayer) {
     map.removeLayer(window.routeLayer);
     window.routeLayer = null;
@@ -1067,13 +1134,29 @@ function bindEvents() {
     if (cngBtn) cngBtn.onclick = () => { selectedService = "CNG"; showFilteredStations("CNG"); };
 
     const clearBtn = document.getElementById("clearBtn");
-    if (clearBtn) clearBtn.onclick = () => { 
-        selectedService = null; 
+    if (clearBtn) clearBtn.onclick = () => {
+        // STEP 3: raise the cleared flag BEFORE wiping markers so the
+        // markerGroup.clearLayers() call inside clearMarkers() cannot
+        // be immediately undone by a pending zoomend debounce.
+        isMapCleared = true;
+        clearTimeout(_zoomRenderDebounce); // STEP 3: cancel any pending re-render
+
+        selectedService = null;
+
+        // Remove route layer if present
         if (window.routeLayer) {
             map.removeLayer(window.routeLayer);
             window.routeLayer = null;
         }
-        clearMarkers(); 
+
+        // STEP 1: remove every known marker pool
+        clearMarkers();                              // currentMarkers[] + markerGroup
+        markers.forEach(m => map.removeLayer(m));    // trip/smart markers
+        markers = [];
+        if (markerGroup) markerGroup.clearLayers();  // belt-and-suspenders
+
+        // STEP 6: UX feedback
+        showToast('Map cleared', 'info', 2000);
     };
 
     const closeNearbyErrorBtn = document.getElementById("close-nearby-error-btn");
