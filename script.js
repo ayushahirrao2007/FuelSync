@@ -388,7 +388,7 @@ function renderMarkers(stations) {
     if (countEl) countEl.textContent = stations.length;
 }
 
-function getStationIcon(services) {
+function getStationIcon(services, options = {}) {
     let color = '#9ca3af'; // gray default
     if (services && services.length > 0) {
         const s = services.map(x => String(x).toLowerCase());
@@ -397,18 +397,53 @@ function getStationIcon(services) {
         else if (s.includes('cng')) color = '#3b82f6';
     }
 
+    let size = 16;
+    let iconSize = 22;
+    let anchor = 11;
+    let opacity = 1;
+    let pulseHtml = '';
+
+    if (options.isBest) {
+        color = '#f59e0b'; // Gold for primary recommended
+        size = 22;
+        iconSize = 30;
+        anchor = 15;
+        pulseHtml = `<div style="position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 2px solid ${color}; animation: pulse 1.5s infinite;"></div>`;
+        
+        if (!document.getElementById('pulse-style')) {
+            const style = document.createElement('style');
+            style.id = 'pulse-style';
+            style.innerHTML = `@keyframes pulse { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.5); opacity: 0; } }`;
+            document.head.appendChild(style);
+        }
+    } else if (options.isSecondary) {
+        color = '#3b82f6'; // Blue for secondary on-route option
+        size = 18;
+        iconSize = 26;
+        anchor = 13;
+        pulseHtml = `<div style="position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 2px solid ${color}; opacity: 0.6; transform: scale(1.3);"></div>`;
+    } else if (options.isOffRoute) {
+        color = '#f97316'; // Orange for off-route fallback
+        size = 14;
+        iconSize = 20;
+        anchor = 10;
+        opacity = 0.8;
+    } else if (options.isOnRoute) {
+        color = '#3b82f6'; // Blue for standard on-route
+    }
+
     return L.divIcon({
         className: 'custom-station-icon',
-        html: `<div style="background-color: ${color}; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
-        iconSize: [22, 22],
-        iconAnchor: [11, 11],
-        popupAnchor: [0, -11]
+        html: `<div style="position: relative; background-color: ${color}; width: ${size}px; height: ${size}px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); opacity: ${opacity}; display: flex; justify-content: center; align-items: center;">${pulseHtml}</div>`,
+        iconSize: [iconSize, iconSize],
+        iconAnchor: [anchor, anchor],
+        popupAnchor: [0, -anchor]
     });
 }
 
-function createMarker(station) {
-    const icon = getStationIcon(station.services);
-    const marker = L.marker([station.lat, station.lng], { icon });
+function createMarker(station, options = {}) {
+    const icon = getStationIcon(station.services, options);
+    const marker = L.marker([station.lat, station.lng], { icon, zIndexOffset: options.isBest ? 1000 : 0 });
 
     // ── XSS fix: escape all Firestore-sourced values before HTML insertion ──
     const safeName = escapeHTML(station.name);
@@ -427,8 +462,18 @@ function createMarker(station) {
         }).join('');
     }
 
+    let topLabel = '';
+    if (options.isBest) {
+        topLabel = `<b style="color: #f59e0b; font-size: 0.9em; display:block; margin-bottom:5px;">⭐ Recommended Station</b>`;
+    } else if (options.isSecondary) {
+        topLabel = `<b style="color: #3b82f6; font-size: 0.9em; display:block; margin-bottom:5px;">📍 On Route Alternative</b>`;
+    } else if (options.isOffRoute) {
+        topLabel = `<b style="color: #f97316; font-size: 0.9em; display:block; margin-bottom:5px;">🚨 Off Route — Nearby Option</b>`;
+    }
+
     marker.bindPopup(`
     <div class="station-popup">
+      ${topLabel}
       <div class="popup-name">${safeName}</div>
       <div style="margin-bottom: 15px;">
         ${badgesHTML}
@@ -1045,6 +1090,10 @@ function endTrip() {
     markers.forEach(m => map.removeLayer(m));
     markers = [];
 
+    // remove legend
+    const legend = document.getElementById('smart-legend');
+    if (legend) legend.remove();
+
     // Revert to single city mode
     const center = CITY_CENTERS[selectedCity] || CITY_CENTERS.Nashik;
     map.setView([center.lat, center.lng], 12);
@@ -1614,6 +1663,68 @@ async function handleSmartSuggestionSubmit() {
             bestStation = corridorStations[0];
         }
 
+        // ── OFF-ROUTE EMERGENCY FALLBACK LOGIC ──
+        let selectedOffRoute = null;
+        let onRouteNearest = bestStation;
+
+        if (battery <= 30) {
+            let nearestOffRoute = null;
+            let minOffRouteDist = Infinity;
+            
+            // Collect lat/lng strings of stations already in the mapped route
+            const onRouteIds = new Set(mappedStations.map(s => `${s.lat},${s.lng}`));
+
+            ALL_STATIONS.forEach(station => {
+                if (!station.lat || !station.lng) return;
+
+                // Service type filter
+                let hasService = false;
+                if (station.services && station.services.length > 0) {
+                    hasService = station.services.some(svc => String(svc).toLowerCase() === serviceType.toLowerCase());
+                } else {
+                    hasService = serviceType.toLowerCase() === 'ev';
+                }
+                if (!hasService) return;
+
+                // Exclude stations already in route list
+                const stationId = `${station.lat},${station.lng}`;
+                if (onRouteIds.has(stationId)) return;
+
+                // Calculate distance from user current location (start)
+                const distFromUser = getDistance(start.lat, start.lng, station.lat, station.lng);
+
+                // Never suggest far off-route station (>5 km)
+                if (distFromUser <= 5 && distFromUser < minOffRouteDist) {
+                    minOffRouteDist = distFromUser;
+                    nearestOffRoute = station;
+                }
+            });
+
+            if (nearestOffRoute) {
+                const distanceToOnRoute = onRouteNearest ? getDistance(start.lat, start.lng, onRouteNearest.lat, onRouteNearest.lng) : Infinity;
+
+                if (battery <= 20) {
+                    if (minOffRouteDist < distanceToOnRoute) {
+                        selectedOffRoute = nearestOffRoute;
+                    }
+                } else if (battery <= 30) {
+                    // Buffer: Allow off-route ONLY if significantly closer (e.g., at least 25% closer)
+                    if (minOffRouteDist <= distanceToOnRoute * 0.75) {
+                        selectedOffRoute = nearestOffRoute;
+                    }
+                }
+            }
+        }
+
+        if (selectedOffRoute) {
+            bestStation = selectedOffRoute;
+            bestStation.isEmergencyOffRoute = true;
+            // Mock route properties so downstream logic/UI doesn't break
+            bestStation.distanceToRoute = getDistance(start.lat, start.lng, bestStation.lat, bestStation.lng);
+            bestStation.progressRatio = 0;
+            bestStation.positionAlongRoute = 0;
+        }
+
         const bestStationEvaluation = evaluateStation(
             bestStation,
             { totalRouteDistance },
@@ -1630,9 +1741,18 @@ async function handleSmartSuggestionSubmit() {
         finalSelection.push(...alternatives);
 
         // FINAL SELECTION - OUTPUT
+        const primaryIsOffRoute = bestStation.isEmergencyOffRoute === true;
+
         finalSelection.forEach((station, index) => {
             const isBest = index === 0;
-            const marker = createMarker(station);
+            const isOffRoute = station.isEmergencyOffRoute === true;
+            
+            // Secondary is the nearest on-route station (which will be at index 1), but ONLY if primary is off-route
+            const isSecondary = primaryIsOffRoute && index === 1;
+
+            const isOnRoute = !isBest && !isSecondary && !isOffRoute;
+
+            const marker = createMarker(station, { isBest, isOffRoute, isOnRoute, isSecondary });
 
             if (isBest) {
                 // ── XSS fix: escape all Firestore-sourced values before HTML insertion ──
@@ -1663,9 +1783,11 @@ async function handleSmartSuggestionSubmit() {
                     </div>
                 ` : '';
 
+                const topLabel = `<b style="color: #f59e0b; font-size: 0.9em; display:block; margin-bottom:5px;">⭐ Recommended Station</b>`;
+
                 marker.bindPopup(`
                   <div class="station-popup">
-                    <b style="color: #8b5cf6; font-size: 0.9em; display:block; margin-bottom:5px;">⭐ BEST MATCH</b>
+                    ${topLabel}
                     <div class="popup-name">${safeName}</div>
                     <div style="margin-bottom: 12px;">
                       ${badgesHTML}
@@ -1695,6 +1817,32 @@ async function handleSmartSuggestionSubmit() {
 
         const modal = document.getElementById('smart-suggestion-modal');
         if (modal) modal.classList.add('hidden');
+
+        // Render legend
+        const oldLegend = document.getElementById('smart-legend');
+        if (oldLegend) oldLegend.remove();
+
+        const legendHTML = `
+        <div id="smart-legend" style="position: absolute; bottom: 20px; right: 20px; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); z-index: 1000; font-size: 0.85em; font-family: 'Plus Jakarta Sans', sans-serif;">
+          <div style="display:flex; align-items:center; margin-bottom: 6px;">
+            <div style="width:12px; height:12px; background:#f59e0b; border-radius:50%; margin-right:8px; border:2px solid white; box-shadow:0 1px 2px rgba(0,0,0,0.3);"></div>
+            <strong style="color: #374151;">Recommended</strong>
+          </div>
+          <div style="display:flex; align-items:center; margin-bottom: 6px;">
+            <div style="width:12px; height:12px; background:#3b82f6; border-radius:50%; margin-right:8px; border:2px solid white; box-shadow:0 1px 2px rgba(0,0,0,0.3); transform: scale(1.1);"></div>
+            <strong style="color: #3b82f6;">On Route Alternative</strong>
+          </div>
+          <div style="display:flex; align-items:center; margin-bottom: 6px;">
+            <div style="width:12px; height:12px; background:#3b82f6; border-radius:50%; margin-right:8px; border:2px solid white; box-shadow:0 1px 2px rgba(0,0,0,0.3);"></div>
+            <span style="color: #4b5563;">On Route</span>
+          </div>
+          <div style="display:flex; align-items:center;">
+            <div style="width:12px; height:12px; background:#f97316; border-radius:50%; margin-right:8px; border:2px solid white; box-shadow:0 1px 2px rgba(0,0,0,0.3); opacity:0.8;"></div>
+            <span style="color: #4b5563;">Nearby (Off Route)</span>
+          </div>
+        </div>
+        `;
+        document.getElementById('map').insertAdjacentHTML('beforeend', legendHTML);
 
         showToast('Smart Suggestion applied!', 'success');
 
