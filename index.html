@@ -113,6 +113,12 @@
           </svg>
         </button>
 
+        <div id="city-selector" class="city-selector" aria-label="City selection">
+          <button class="city-btn active" data-city="Nashik" type="button">Nashik</button>
+          <button class="city-btn" data-city="Mumbai" type="button">Mumbai</button>
+          <button class="city-btn" data-city="Pune" type="button">Pune</button>
+        </div>
+
         <div id="locate-toast" class="toast-notification">
           <span id="toast-msg"></span>
         </div>
@@ -385,6 +391,28 @@
       <div class="modal-body">
         <p class="modal-copy">Please select station type (EV / Petrol / CNG)</p>
         <button id="ok-nearby-error-btn" class="btn-plan-trip submit-btn" type="button">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Prompt Modal -->
+  <div id="login-prompt-modal" class="modal-overlay hidden">
+    <div class="modal-content modal-content-compact">
+      <div class="modal-header">
+        <h2>Login Required</h2>
+        <button id="close-login-prompt-btn" class="close-btn" aria-label="Close" type="button">&times;</button>
+      </div>
+
+      <div class="modal-body" style="text-align: center;">
+        <p class="modal-copy" style="margin-bottom: 20px;">Please login to use this feature</p>
+        <button id="modal-login-btn" class="btn-plan-trip submit-btn" type="button" style="display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 auto;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+            <polyline points="10 17 15 12 10 7"></polyline>
+            <line x1="15" y1="12" x2="3" y2="12"></line>
+          </svg>
+          Login with Google
+        </button>
       </div>
     </div>
   </div>

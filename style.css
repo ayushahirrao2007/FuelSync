@@ -538,6 +538,61 @@ a {
   transform: translateY(-1px);
 }
 
+/* ── City Selector (floating on map) ── */
+.city-selector {
+  position: absolute;
+  top: 1.25rem;
+  left: 1.25rem;
+  z-index: 1000;
+  display: flex;
+  gap: 5px;
+  padding: 5px 6px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.city-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 9px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.6);
+  transition: all 0.22s ease;
+  font-family: var(--font-body);
+  letter-spacing: 0.02em;
+}
+
+.city-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.city-btn.active {
+  background: linear-gradient(135deg, var(--primary), #ff9330);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(255, 122, 0, 0.35);
+}
+
+.city-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.city-selector.loading {
+  animation: selectorPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes selectorPulse {
+  0%, 100% { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25); }
+  50% { box-shadow: 0 4px 24px rgba(255, 122, 0, 0.35); }
+}
+
 .user-marker {
   width: 20px;
   height: 20px;

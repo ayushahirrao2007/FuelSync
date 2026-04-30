@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getAuth,
   signInWithPopup,
@@ -28,6 +28,24 @@ let ALL_STATIONS   = [];
 let smartTripActive = false;
 let loginInProgress = false;
 let selectedService = null;
+let isUserLoggedIn = false;
+
+// ── Execution Control State ──
+let currentActiveCity = null;
+let lastRouteKey = null;
+
+// ── City-based data loading state ──
+let selectedCity = "Nashik";
+let loadedCitiesCache = {};
+let loadedCitiesOrder = [];
+const CACHE_LIMIT = 5;
+let cityLoadingInProgress = false;
+
+const CITY_CENTERS = {
+  Nashik: { lat: 19.9975, lng: 73.7898 },
+  Mumbai: { lat: 19.0760, lng: 72.8777 },
+  Pune:   { lat: 18.5204, lng: 73.8567 }
+};
 
 function initMap() {
     const NASHIK = [19.9975, 73.7898];
@@ -54,25 +72,240 @@ function initMap() {
         if (map) map.invalidateSize();
     });
 
-    loadStations();
+    loadCityData(selectedCity);
 }
 
-async function loadStations() {
+// ── FIFO cache eviction ──
+function addToCache(cityName, data) {
+    if (loadedCitiesCache[cityName]) {
+        // Already cached — move to end of order
+        loadedCitiesOrder = loadedCitiesOrder.filter(c => c !== cityName);
+        loadedCitiesOrder.push(cityName);
+        return;
+    }
+    // Evict oldest if at limit
+    if (loadedCitiesOrder.length >= CACHE_LIMIT) {
+        const oldest = loadedCitiesOrder.shift();
+        delete loadedCitiesCache[oldest];
+        console.log(`[Cache] Evicted ${oldest} (FIFO limit: ${CACHE_LIMIT})`);
+    }
+    loadedCitiesCache[cityName] = data;
+    loadedCitiesOrder.push(cityName);
+}
+
+// ── Disable/enable city buttons during loading ──
+function setCityButtonsDisabled(disabled) {
+    const selector = document.getElementById('city-selector');
+    if (selector) selector.classList.toggle('loading', disabled);
+    document.querySelectorAll('.city-btn').forEach(btn => {
+        btn.disabled = disabled;
+    });
+}
+
+// ── Single-city data loading with cache ──
+async function loadCityData(cityName) {
     try {
-        const querySnapshot = await getDocs(collection(db, "stations"));
-        ALL_STATIONS = [];
+        console.time("Fetch " + cityName);
+        if (loadedCitiesCache[cityName]) {
+            console.log("✅ CACHE HIT:", cityName);
+            ALL_STATIONS = [...loadedCitiesCache[cityName]];
+            allStations = ALL_STATIONS;
+            const loader = document.getElementById('map-loader');
+            if (loader) loader.classList.add('hidden');
+            clearMarkers();
+            updateMapSubtitle();
+            console.log(`[CityLoader] Loaded ${cityName} from cache (${ALL_STATIONS.length} stations)`);
+            console.timeEnd("Fetch " + cityName);
+            return;
+        }
+
+        console.log("❌ CACHE MISS:", cityName);
+
+        // UX: show loading state
+        cityLoadingInProgress = true;
+        setCityButtonsDisabled(true);
+        showToast(`Loading ${cityName} stations...`);
+
+        console.log("🔥 FETCHING FROM FIRESTORE:", cityName);
+        const q = query(collection(db, "stations"), where("city", "==", cityName));
+        const querySnapshot = await getDocs(q);
+        const cityData = [];
         querySnapshot.forEach((doc) => {
-            ALL_STATIONS.push(doc.data());
+            cityData.push(doc.data());
         });
+
+        addToCache(cityName, cityData);
+        console.log("📦 CACHE STATE:", Object.keys(loadedCitiesCache));
+        ALL_STATIONS = [...cityData];
+        allStations = ALL_STATIONS;
 
         const loader = document.getElementById('map-loader');
         if (loader) loader.classList.add('hidden');
 
-        allStations = ALL_STATIONS;
         clearMarkers();
+        updateMapSubtitle();
+
+        // UX: handle empty data
+        if (cityData.length === 0) {
+            showToast(`No stations found in ${cityName}`, 'error', 3500);
+        } else {
+            showToast(`${cityData.length} stations loaded for ${cityName}`, 'success', 2000);
+        }
+        console.log(`[CityLoader] Fetched ${cityName} from Firestore (${cityData.length} stations)`);
+        console.timeEnd("Fetch " + cityName);
     } catch (error) {
-        console.error("Firestore fetch failed:", error);
+        console.error(`[CityLoader] Fetch failed for ${cityName}:`, error);
+        showToast(`Failed to load ${cityName} data`, 'error', 3000);
+    } finally {
+        cityLoadingInProgress = false;
+        setCityButtonsDisabled(false);
     }
+}
+
+// ── Multi-city data loading for routes ──
+async function loadMultiCityData(citiesToLoad) {
+    try {
+        const allCityData = [];
+        const fetchPromises = [];
+
+        showToast(`Loading stations for route (${citiesToLoad.join(', ')})...`);
+
+        for (const city of citiesToLoad) {
+            console.time("Fetch " + city);
+            if (loadedCitiesCache[city]) {
+                console.log("✅ CACHE HIT:", city);
+                allCityData.push(...loadedCitiesCache[city]);
+                console.log(`[MultiCity] ${city} loaded from cache`);
+                console.timeEnd("Fetch " + city);
+            } else {
+                console.log("❌ CACHE MISS:", city);
+                console.log("🔥 FETCHING FROM FIRESTORE:", city);
+                fetchPromises.push(
+                    getDocs(query(collection(db, "stations"), where("city", "==", city)))
+                        .then(snapshot => {
+                            const cityData = [];
+                            snapshot.forEach(doc => cityData.push(doc.data()));
+                            addToCache(city, cityData);
+                            console.log("📦 CACHE STATE:", Object.keys(loadedCitiesCache));
+                            allCityData.push(...cityData);
+                            console.log(`[MultiCity] ${city} fetched from Firestore (${cityData.length} stations)`);
+                            console.timeEnd("Fetch " + city);
+                        })
+                );
+            }
+        }
+
+        await Promise.all(fetchPromises);
+
+        // Strict 3-tier deduplication: placeId > mapsLink > lat+lng
+        const seenByPlaceId = new Set();
+        const seenByMapsLink = new Set();
+        const seenByCoords = new Set();
+        const uniqueStations = [];
+
+        allCityData.forEach(station => {
+            // Tier 1: placeId (highest priority)
+            if (station.placeId) {
+                if (seenByPlaceId.has(station.placeId)) return;
+                seenByPlaceId.add(station.placeId);
+                uniqueStations.push(station);
+                return;
+            }
+            // Tier 2: mapsLink
+            if (station.mapsLink) {
+                if (seenByMapsLink.has(station.mapsLink)) return;
+                seenByMapsLink.add(station.mapsLink);
+                uniqueStations.push(station);
+                return;
+            }
+            // Tier 3: lat + lng (fallback)
+            const coordKey = `${station.lat}_${station.lng}`;
+            if (seenByCoords.has(coordKey)) return;
+            seenByCoords.add(coordKey);
+            uniqueStations.push(station);
+        });
+
+        ALL_STATIONS = uniqueStations;
+        allStations = ALL_STATIONS;
+
+        if (uniqueStations.length === 0) {
+            showToast('No stations found along this route', 'error', 3500);
+        }
+
+        console.log(`[MultiCity] Total unique stations loaded: ${ALL_STATIONS.length} from [${citiesToLoad.join(', ')}]`);
+    } catch (error) {
+        console.error("[MultiCity] Multi-city fetch failed:", error);
+        showToast('Failed to load route stations', 'error', 3000);
+    }
+}
+
+// ── Detect which cities a route passes through ──
+function detectRouteCities(routeCoords, startCoords, endCoords) {
+    const cities = new Set();
+
+    // Check start and destination proximity to known city centers (≤20 km)
+    for (const [cityName, center] of Object.entries(CITY_CENTERS)) {
+        const distToStart = getDistance(startCoords.lat, startCoords.lng, center.lat, center.lng);
+        if (distToStart <= 20) cities.add(cityName);
+
+        const distToEnd = getDistance(endCoords.lat, endCoords.lng, center.lat, center.lng);
+        if (distToEnd <= 20) cities.add(cityName);
+    }
+
+    // Check intermediate route points for proximity to city centers (≤12 km)
+    // Dynamic sampling: ~100 sample points regardless of route length
+    for (const [cityName, center] of Object.entries(CITY_CENTERS)) {
+        if (cities.has(cityName)) continue;
+        const step = Math.max(10, Math.floor(routeCoords.length / 100));
+        for (let i = 0; i < routeCoords.length; i += step) {
+            const point = routeCoords[i];
+            const dist = getDistance(point[1], point[0], center.lat, center.lng);
+            if (dist <= 12) {
+                cities.add(cityName);
+                break;
+            }
+        }
+        // Always check last point to avoid missing destination-adjacent cities
+        if (!cities.has(cityName)) {
+            const lastPoint = routeCoords[routeCoords.length - 1];
+            const lastDist = getDistance(lastPoint[1], lastPoint[0], center.lat, center.lng);
+            if (lastDist <= 12) cities.add(cityName);
+        }
+    }
+
+    console.log(`[RouteDetect] Detected cities: [${Array.from(cities).join(', ')}]`);
+    return Array.from(cities);
+}
+
+// ── Update map subtitle based on current data context ──
+function updateMapSubtitle() {
+    const subtitleEl = document.getElementById('map-subtitle');
+    if (subtitleEl) subtitleEl.textContent = `All Stations – ${selectedCity}`;
+}
+
+// ── Switch city via UI ──
+async function switchCity(cityName) {
+    if (cityName === currentActiveCity) {
+        console.log("🚫 Skipping reload — same city selected");
+        return;
+    }
+    
+    if (cityLoadingInProgress) return; // prevent overlapping loads
+    currentActiveCity = cityName;
+    selectedCity = cityName;
+
+    // Update city selector button highlights
+    document.querySelectorAll('.city-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.city === cityName);
+    });
+
+    // Pan map to city center
+    const center = CITY_CENTERS[cityName];
+    if (center && map) {
+        map.flyTo([center.lat, center.lng], 13, { duration: 1.2 });
+    }
+
+    await loadCityData(cityName);
 }
 
 function renderMarkers(stations) {
@@ -181,8 +414,8 @@ function filterStations(type) {
     updateFilterButtons(type);
 
     const subtitleEl = document.getElementById('map-subtitle');
-    const labelMap   = { all: 'All Stations – Nashik', EV: 'EV Charging – Nashik', petrol: 'Petrol Pumps – Nashik', CNG: 'CNG Stations – Nashik' };
-    if (subtitleEl) subtitleEl.textContent = labelMap[type] || 'Nashik';
+    const labelMap   = { all: `All Stations – ${selectedCity}`, EV: `EV Charging – ${selectedCity}`, petrol: `Petrol Pumps – ${selectedCity}`, CNG: `CNG Stations – ${selectedCity}` };
+    if (subtitleEl) subtitleEl.textContent = labelMap[type] || selectedCity;
 }
 
 function updateFilterButtons(activeType) {
@@ -501,7 +734,6 @@ async function startTrip() {
   document.getElementById("tripBtn").innerText = "End Trip";
 
   try {
-      allStations = ALL_STATIONS;
       
       const serviceType = document.querySelector('input[name="trip-service"]:checked').value;
       const startType = document.querySelector('input[name="start-type"]:checked').value;
@@ -529,6 +761,15 @@ async function startTrip() {
 
       console.log("START:", start);
       console.log("END:", end);
+
+      const routeKey = `${start.lat},${start.lng}→${end.lat},${end.lng}`;
+      if (routeKey === lastRouteKey) {
+          console.log("🚫 Skipping route processing — same route");
+          const modal = document.getElementById('plan-trip-modal');
+          if (modal) modal.classList.add('hidden');
+          return;
+      }
+      lastRouteKey = routeKey;
 
       const routeUrl = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
       const response = await fetch(routeUrl);
@@ -561,138 +802,124 @@ async function startTrip() {
       window.currentRouteCoords = routeCoords;
       window.currentUserLocation = start;
       window.currentSelectedService = serviceType;
+
+      // ── Route-based multi-city loading ──
+      const citiesToLoad = detectRouteCities(routeCoords, start, end);
+      if (citiesToLoad.length > 0) {
+          await loadMultiCityData(citiesToLoad);
+      }
       
-      function getStationDistances(routeCoords, station, userLocation) {
-        let minRouteDist = Infinity;
-        for (let i = 0; i < routeCoords.length; i += 10) {
-          const point = routeCoords[i];
-          const dist = getDistance(
-            station.lat,
-            station.lng,
-            point[1], // lat is index 1
-            point[0]  // lng is index 0
-          );
-          if (dist < minRouteDist) {
-            minRouteDist = dist;
-          }
-        }
-        const userDist = getDistance(
-          userLocation.lat,
-          userLocation.lng,
-          station.lat,
-          station.lng
-        );
-        return { routeDist: minRouteDist, userDist };
+      // ── Route corridor filtering ──
+
+      // Build cumulative distance array for route progress tracking
+      const cumDist = [0];
+      let totalRouteDist = 0;
+      for (let i = 1; i < routeCoords.length; i++) {
+          const p1 = routeCoords[i - 1];
+          const p2 = routeCoords[i];
+          totalRouteDist += getDistance(p1[1], p1[0], p2[1], p2[0]);
+          cumDist.push(totalRouteDist);
       }
 
-      function getRouteStations(routeCoords, stations, selectedService, userLocation) {
-        const result = [];
-        stations.forEach(station => {
+      // Dynamic sampling step — ~200 samples regardless of route length
+      const sampleStep = Math.max(1, Math.floor(routeCoords.length / 200));
+
+      // Measure each station against the route
+      const measuredStations = [];
+      allStations.forEach(station => {
+          if (!station.lat || !station.lng) return;
+
+          // Service type filter
           let hasService = false;
           if (station.services && station.services.length > 0) {
-              hasService = station.services.some(svc => String(svc).toLowerCase() === selectedService.toLowerCase());
+              hasService = station.services.some(svc => String(svc).toLowerCase() === serviceType.toLowerCase());
           } else {
-              hasService = selectedService.toLowerCase() === 'ev';
+              hasService = serviceType.toLowerCase() === 'ev';
           }
           if (!hasService) return;
 
-          const { routeDist, userDist } = getStationDistances(
-            routeCoords,
-            station,
-            userLocation
-          );
-
-          if (routeDist <= 4 && userDist <= 15) {
-            result.push({
-              ...station,
-              routeDist,
-              userDist
-            });
+          // Find closest route point
+          let minRouteDist = Infinity;
+          let closestIdx = 0;
+          for (let i = 0; i < routeCoords.length; i += sampleStep) {
+              const point = routeCoords[i];
+              const dist = getDistance(station.lat, station.lng, point[1], point[0]);
+              if (dist < minRouteDist) {
+                  minRouteDist = dist;
+                  closestIdx = i;
+              }
           }
-        });
-        return result;
-      }
-
-      function sortStations(stations) {
-        return stations.sort((a, b) => {
-          if (a.routeDist !== b.routeDist) {
-            return a.routeDist - b.routeDist;
+          // Refine: check neighbors of closest sampled point for precision
+          const refineStart = Math.max(0, closestIdx - sampleStep);
+          const refineEnd = Math.min(routeCoords.length - 1, closestIdx + sampleStep);
+          for (let i = refineStart; i <= refineEnd; i++) {
+              const point = routeCoords[i];
+              const dist = getDistance(station.lat, station.lng, point[1], point[0]);
+              if (dist < minRouteDist) {
+                  minRouteDist = dist;
+                  closestIdx = i;
+              }
           }
-          return a.userDist - b.userDist;
-        });
-      }
 
-      function getFallbackCorridorStations(routeCoords, stations, selectedService, userLocation) {
-        const corridorLimits = [1, 2, 4];
-        const measuredStations = [];
+          // Position along route (km from start)
+          const positionAlongRoute = cumDist[closestIdx];
+          const progressRatio = totalRouteDist > 0 ? positionAlongRoute / totalRouteDist : 0;
 
-        stations.forEach(station => {
-          let hasService = false;
-          if (station.services && station.services.length > 0) {
-              hasService = station.services.some(svc => String(svc).toLowerCase() === selectedService.toLowerCase());
-          } else {
-              hasService = selectedService.toLowerCase() === 'ev';
-          }
-          if (!hasService || !station.lat || !station.lng) return;
+          // Strict corridor: discard anything > 4 km from route
+          if (minRouteDist > 4) return;
 
-          const { routeDist, userDist } = getStationDistances(
-            routeCoords,
-            station,
-            userLocation
-          );
+          // Discard stations behind start (< 0.5 km along route)
+          if (positionAlongRoute < 0.5) return;
+
+          // Assign corridor tier for priority sorting
+          let corridorTier = 3; // 2-4 km
+          if (minRouteDist <= 1) corridorTier = 1;      // ideal
+          else if (minRouteDist <= 2) corridorTier = 2;  // acceptable
 
           measuredStations.push({
-            ...station,
-            routeDist,
-            userDist
+              ...station,
+              routeDist: minRouteDist,
+              positionAlongRoute,
+              progressRatio,
+              corridorTier,
+              userDist: getDistance(start.lat, start.lng, station.lat, station.lng)
           });
-        });
-
-        for (const limit of corridorLimits) {
-          const corridorStations = measuredStations.filter(station => station.routeDist <= limit);
-          if (corridorStations.length > 0) {
-            return sortStations(corridorStations);
-          }
-        }
-
-        return [];
-      }
-
-      function getFinalStations(routeCoords, allStations, selectedService, userLocation) {
-        let stations = getRouteStations(
-          routeCoords,
-          allStations,
-          selectedService,
-          userLocation
-        );
-
-        if (stations.length === 0) {
-          return getFallbackCorridorStations(
-            routeCoords,
-            allStations,
-            selectedService,
-            userLocation
-          );
-        }
-
-        stations = sortStations(stations);
-        return stations;
-      }
-
-      const filteredStations = getFinalStations(
-        routeCoords,
-        allStations,
-        serviceType,
-        start
-      );
-
-      filteredStations.forEach(station => {
-          const marker = createMarker(station).addTo(map);
-          markers.push(marker);
       });
 
-      showToast(`Found ${filteredStations.length} stations along the route.`, 'success');
-      
+      // ── Strict tier-based selection ──
+      // Show ALL stations from the closest available corridor only
+      let filteredStations = [];
+      const tier1 = measuredStations.filter(s => s.corridorTier === 1);
+      const tier2 = measuredStations.filter(s => s.corridorTier <= 2);
+      const tier3 = measuredStations; // all ≤4km already
+
+      if (tier1.length > 0) {
+          filteredStations = tier1;
+      } else if (tier2.length > 0) {
+          filteredStations = tier2;
+      } else {
+          filteredStations = tier3;
+      }
+
+      // Sort within selected tier: route distance → forward progress → user distance
+      filteredStations.sort((a, b) => {
+          if (Math.abs(a.routeDist - b.routeDist) > 0.1) return a.routeDist - b.routeDist;
+          if (Math.abs(a.positionAlongRoute - b.positionAlongRoute) > 0.5) return a.positionAlongRoute - b.positionAlongRoute;
+          return a.userDist - b.userDist;
+      });
+
+      // Handle empty result
+      if (filteredStations.length === 0) {
+          showToast('No stations found along your route', 'error', 3500);
+      } else {
+          // Render corridor-filtered stations
+          filteredStations.forEach(station => {
+              const marker = createMarker(station).addTo(map);
+              markers.push(marker);
+          });
+          showToast(`Found ${filteredStations.length} stations along the route.`, 'success');
+      }
+
       const modal = document.getElementById('plan-trip-modal');
       if (modal) modal.classList.add('hidden');
   } catch (err) {
@@ -711,6 +938,7 @@ async function startTrip() {
 
 function endTrip() {
   tripActive = false;
+  lastRouteKey = null;
 
   document.getElementById("tripBtn").innerText = "Plan Your Trip";
 
@@ -723,11 +951,12 @@ function endTrip() {
   markers.forEach(m => map.removeLayer(m));
   markers = [];
 
-  // reset map
-  map.setView([19.9975, 73.7898], 12);
+  // Revert to single city mode
+  const center = CITY_CENTERS[selectedCity] || CITY_CENTERS.Nashik;
+  map.setView([center.lat, center.lng], 12);
   
-  // optionally re-render normal stations via the main filtering mechanism if exists
-  clearMarkers();
+  // Reload selected city data only
+  loadCityData(selectedCity);
 }
 
 function handleNearbyStation() {
@@ -858,7 +1087,10 @@ function bindEvents() {
     if (locateBtn) locateBtn.addEventListener('click', locateUser);
 
     const nearbyBtn = document.getElementById('btn-nearby');
-    if (nearbyBtn) nearbyBtn.addEventListener('click', handleNearbyStation);
+    if (nearbyBtn) nearbyBtn.addEventListener('click', () => {
+        if (!requireLogin()) return;
+        handleNearbyStation();
+    });
 
     const planTripBtn = document.getElementById('tripBtn');
     const planTripModal = document.getElementById('plan-trip-modal');
@@ -869,7 +1101,10 @@ function bindEvents() {
     const destInput = document.getElementById('trip-dest-input');
 
     if (planTripBtn) {
-        planTripBtn.addEventListener('click', toggleTrip);
+        planTripBtn.addEventListener('click', () => {
+            if (!requireLogin()) return;
+            toggleTrip();
+        });
     }
 
     if (planTripModal) {
@@ -906,11 +1141,18 @@ function bindEvents() {
             markers.forEach(m => map.removeLayer(m));
             markers = [];
             clearMarkers();
-            if (map) map.flyTo([19.9975, 73.7898], 13, { duration: 1.2 });
+
+            // Revert to selected city center
+            const center = CITY_CENTERS[selectedCity] || CITY_CENTERS.Nashik;
+            if (map) map.flyTo([center.lat, center.lng], 13, { duration: 1.2 });
             showToast('Filters reset.', 'info', 2000);
             
-            // if trip is active end it
-            if (tripActive) endTrip();
+            // if trip is active end it, otherwise just reload selected city
+            if (tripActive) {
+                endTrip();
+            } else {
+                loadCityData(selectedCity);
+            }
         });
     }
 
@@ -928,7 +1170,10 @@ function bindEvents() {
 
     const smartSuggestBtn = document.getElementById('btn-smart-suggest');
     if (smartSuggestBtn) {
-        smartSuggestBtn.addEventListener('click', openSmartSuggestionForm);
+        smartSuggestBtn.addEventListener('click', () => {
+            if (!requireLogin()) return;
+            openSmartSuggestionForm();
+        });
     }
 
     const smartSuggestionModal = document.getElementById('smart-suggestion-modal');
@@ -1003,6 +1248,23 @@ function bindEvents() {
         };
     }
 
+    const modalLoginBtn = document.getElementById("modal-login-btn");
+    if (modalLoginBtn) {
+        modalLoginBtn.onclick = async () => {
+            const loginModal = document.getElementById("login-prompt-modal");
+            if (loginModal) loginModal.classList.add("hidden");
+            if (loginBtn) loginBtn.click();
+        };
+    }
+
+    const closeLoginPromptBtn = document.getElementById("close-login-prompt-btn");
+    const loginPromptModal = document.getElementById("login-prompt-modal");
+    if (closeLoginPromptBtn) {
+        closeLoginPromptBtn.onclick = () => {
+            if (loginPromptModal) loginPromptModal.classList.add("hidden");
+        };
+    }
+
     onAuthStateChanged(auth, (user) => {
       const loginBtn = document.getElementById("loginBtn");
       const profileBox = document.getElementById("profileBox");
@@ -1012,11 +1274,13 @@ function bindEvents() {
       if (!loginBtn || !profileBox || !userName || !userPhoto) return;
 
       if (user) {
+        isUserLoggedIn = true;
         loginBtn.style.display = "none";
         profileBox.style.display = "flex";
         userName.innerText = user.displayName;
         userPhoto.src = user.photoURL;
       } else {
+        isUserLoggedIn = false;
         loginBtn.style.display = "inline-block";
         profileBox.style.display = "none";
       }
@@ -1073,6 +1337,15 @@ async function handleSmartSuggestionSubmit() {
         showToast('Processing Smart Suggestion...');
         let end = await geocodeLocation(destQuery);
 
+        const routeKey = `${start.lat},${start.lng}→${end.lat},${end.lng}`;
+        if (routeKey === lastRouteKey) {
+            console.log("🚫 Skipping route — duplicate input");
+            const modal = document.getElementById('smart-suggestion-modal');
+            if (modal) modal.classList.add('hidden');
+            return;
+        }
+        lastRouteKey = routeKey;
+
         const routeUrl = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
         const response = await fetch(routeUrl);
         if (!response.ok) throw new Error('OSRM fetch failed');
@@ -1100,7 +1373,13 @@ async function handleSmartSuggestionSubmit() {
 
         map.fitBounds(window.routeLayer.getBounds(), { padding: [50, 50] });
 
-        const routeCoords = routeGeoJSON.coordinates; 
+        const routeCoords = routeGeoJSON.coordinates;
+
+        // ── Route-based multi-city loading for smart suggestion ──
+        const smartCitiesToLoad = detectRouteCities(routeCoords, start, end);
+        if (smartCitiesToLoad.length > 0) {
+            await loadMultiCityData(smartCitiesToLoad);
+        }
         
         // Cumulative distances for precise progress calculation
         let cumulativeDistances = [0];
@@ -1315,8 +1594,23 @@ function endSmartTrip() {
     markers.forEach(m => map.removeLayer(m));
     markers = [];
 
-    map.setView([19.9975, 73.7898], 12);
-    clearMarkers();
+    // Revert to single city mode
+    const center = CITY_CENTERS[selectedCity] || CITY_CENTERS.Nashik;
+    map.setView([center.lat, center.lng], 12);
+    loadCityData(selectedCity);
+}
+
+// ── Require Login Gate ──
+function requireLogin() {
+    if (isUserLoggedIn) return true;
+    
+    const loginModal = document.getElementById("login-prompt-modal");
+    if (loginModal) {
+        loginModal.classList.remove("hidden");
+    } else {
+        alert("Please login to use this feature");
+    }
+    return false;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1325,6 +1619,21 @@ document.addEventListener('DOMContentLoaded', () => {
             clearInterval(checkLeaflet);
             initMap();
             bindEvents();
+            initCitySelector();
         }
     }, 100);
 });
+
+// ── City Selector UI initialization ──
+function initCitySelector() {
+    document.querySelectorAll('.city-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const city = btn.dataset.city;
+            if (city && city !== selectedCity) {
+                // If a trip is active, end it first
+                if (tripActive) endTrip();
+                switchCity(city);
+            }
+        });
+    });
+}
