@@ -112,10 +112,109 @@
       border: 1px solid #ef4444;
       display: block;
     }
+
+    /* ── Auth: login screen ── */
+    #login-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: #f3f4f6;
+    }
+    #login-screen .auth-card {
+      background: white;
+      padding: 40px 32px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+      text-align: center;
+      max-width: 360px;
+      width: 100%;
+    }
+    #login-screen h1 { color: #ff7a00; margin: 0 0 8px; font-size: 1.6rem; }
+    #login-screen p  { color: #6b7280; margin: 0 0 28px; font-size: 0.9rem; }
+    #login-screen .google-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 24px;
+      background: #fff;
+      color: #374151;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 600;
+      width: 100%;
+      justify-content: center;
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+    #login-screen .google-btn:hover {
+      background: #f9fafb;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    #login-screen .google-btn svg { flex-shrink: 0; }
+    #access-denied {
+      color: #991b1b;
+      background: #fee2e2;
+      border: 1px solid #ef4444;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-top: 16px;
+      font-size: 0.88rem;
+      display: none;
+    }
+    /* ── Auth: admin panel hidden until verified ── */
+    #admin-panel { display: none; }
+    #admin-topbar {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 10px 20px;
+      margin-bottom: 20px;
+    }
+    #admin-topbar span { font-size: 0.9rem; color: #6b7280; }
+    #logout-btn {
+      padding: 7px 16px;
+      background: #ef4444;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      width: auto;
+      transition: background 0.2s;
+    }
+    #logout-btn:hover { background: #dc2626; }
   </style>
 </head>
 
 <body>
+
+  <!-- ── LOGIN SCREEN (shown when not authenticated) ── -->
+  <div id="login-screen">
+    <div class="auth-card">
+      <h1>⚡ FuelSync</h1>
+      <p>Admin Panel — restricted access only</p>
+      <button class="google-btn" id="google-login-btn">
+        <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
+        Sign in with Google
+      </button>
+      <div id="access-denied">⛔ Access Denied — your account is not authorised.</div>
+    </div>
+  </div>
+
+  <!-- ── ADMIN TOPBAR (shown when authenticated) ── -->
+  <div id="admin-topbar">
+    <span id="admin-user-label">Logged in as —</span>
+    <button id="logout-btn">Logout</button>
+  </div>
+
+  <!-- ── ADMIN PANEL (hidden until auth verified) ── -->
+  <div id="admin-panel">
 
   <div class="container">
     <h2>Add Station</h2>
@@ -168,9 +267,15 @@
     <div id="delMsg" class="message"></div>
   </div>
 
+  </div><!-- /#admin-panel -->
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getFirestore, collection, getDocs, addDoc, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+    // ── CHANGE THIS to your Gmail address ──
+    const ALLOWED_EMAIL = 'ayushahirrao4@gmail.com';
 
     const firebaseConfig = {
       apiKey: "AIzaSyBYoR_OTowzepYYgzFr3g-DHieOc6lCHVA",
@@ -179,7 +284,51 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    const db  = getFirestore(app);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
+
+    // ── DOM refs ──
+    const loginScreen  = document.getElementById('login-screen');
+    const adminPanel   = document.getElementById('admin-panel');
+    const adminTopbar  = document.getElementById('admin-topbar');
+    const adminLabel   = document.getElementById('admin-user-label');
+    const accessDenied = document.getElementById('access-denied');
+
+    // ── Google login button ──
+    document.getElementById('google-login-btn').addEventListener('click', async () => {
+      try {
+        accessDenied.style.display = 'none';
+        await signInWithPopup(auth, provider);
+      } catch (err) {
+        if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
+          console.error('[Admin Auth]', err);
+        }
+      }
+    });
+
+    // ── Logout button ──
+    document.getElementById('logout-btn').addEventListener('click', () => signOut(auth));
+
+    // ── Auth state gate ──
+    onAuthStateChanged(auth, (user) => {
+      if (user && user.email === ALLOWED_EMAIL) {
+        // ✅ Authorised
+        loginScreen.style.display  = 'none';
+        adminPanel.style.display   = 'block';
+        adminTopbar.style.display  = 'flex';
+        adminLabel.textContent     = `Logged in as ${user.email}`;
+      } else if (user) {
+        // ⛔ Wrong email — sign out immediately
+        accessDenied.style.display = 'block';
+        signOut(auth);
+      } else {
+        // Not logged in
+        loginScreen.style.display  = 'flex';
+        adminPanel.style.display   = 'none';
+        adminTopbar.style.display  = 'none';
+      }
+    });
 
     const form = document.getElementById('adminForm');
     const latInput = document.getElementById('lat');
